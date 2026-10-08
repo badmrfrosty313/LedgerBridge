@@ -20,7 +20,7 @@ const assert = require('node:assert/strict');
  await page.getByRole('button', {name:'Create approved CSV'}).click();
  await page.getByText('1 approved records exported.',{exact:false}).waitFor();
  const downloadURL=await page.locator('#export-list a.download').getAttribute('href');
- const response=await page.request.get(downloadURL);
+ const response=await page.request.get(new URL(downloadURL, page.url()).href);
  assert.equal(response.status(),200);
  assert.match(await response.text(),/1050.00/);
  await page.getByRole('button',{name:'Review queue',exact:false}).click();
