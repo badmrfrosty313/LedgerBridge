@@ -3,6 +3,9 @@ __pycache__/
 .venv/
 data/
 *.sqlite3*
+*.db
+*.db-*
+*.bak
 output/
 node_modules/
 .env

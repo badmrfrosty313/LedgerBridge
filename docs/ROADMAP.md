@@ -1,25 +1,16 @@
-# Implementation roadmap
+# Roadmap
 
-## Delivered: local review workflow
+## Delivered
 
-Document text and CSV import; configurable validation; SQLite persistence; exception review; approvals and rejection; audit history; immutable CSV exports; responsive UI; regression and live API tests; Windows launcher; CI.
+Local workflow: text/CSV import, deterministic extraction, validation, review, approvals, SQLite storage, audit trail, durable CSV snapshots, and a separate fake ERP with reconciled, idempotent import receipts.
 
-## Next: document ingestion
+Deployment hardening: explicit runtime modes, user accounts and role checks, server-controlled audit identities, bounded sessions, CSRF tokens, authenticated local tests, a WSGI production path behind TLS, schema version checks, and verified SQLite backups.
 
-Reuse and evaluate the earlier local OCR engine against generated invoice images and PDFs. Add bounded page/image processing, OCR confidence notes, native PDF text extraction, and Excel import. Keep original documents out of Git. Preserve source provenance and show confidence as an observation, not a promise of accuracy.
+## Next product capabilities
 
-## Delivered: legacy bridge demonstration
+- Local OCR for images/PDFs and Excel import, each tested against bounded inputs and a labeled fixture corpus.
+- Configurable ERP field mapping, a connector interface, dry-run preview, and verified third-party contracts. MIP-specific support needs a documented schema and account access.
+- Optional provider-neutral AI extraction with structured outputs, deterministic validation, reviewer approval, quality metrics, and MCP tools.
+- Organization isolation, SSO/MFA, PostgreSQL, durable external audit storage, and coordinated migrations for multi-tenant or larger deployments.
 
-A fake ERP with a separate data store accepts approved export batches through a local HTTP API. The connector checks receipt IDs, record counts, and payload hashes; retries reuse the batch ID without double posting. Tests cover target rollback, conflicting IDs, mismatched receipts, and recovery after a lost local delivery record.
-
-Next additions: configurable target field mapping, connector contracts, dry-run previews, multiple target formats, and richer error recovery. MIP-specific support remains an optional adapter requiring a verified target schema.
-
-## Next: AI operations layer
-
-Add a provider-neutral extraction adapter with schema-validated output, deterministic comparison against totals, and explicit reviewer approval. Implement MCP tools for list exceptions, inspect record, propose correction, and create export. Keep posting actions behind the reviewed workflow. Measure extraction correctness, exception rate, and review time on a fixed fixture corpus.
-
-## Next: portfolio deployment
-
-Adopt FastAPI and React/TypeScript when splitting the API/UI becomes worthwhile. Add PostgreSQL, migrations, authenticated roles, organization isolation, deployment configuration, Docker, and an Azure demo using synthetic data. Add production-grade serving, retention, backups, and access controls before external users or real financial data.
-
-These are planned capabilities, not claims about the current release.
+These are future capabilities, not release claims.

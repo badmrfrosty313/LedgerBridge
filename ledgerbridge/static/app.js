@@ -1,6 +1,6 @@
 "use strict";
 const $ = (selector) => document.querySelector(selector);
-const state = {documents: [], selected: null, detail: null, rules: null, view: "documents", busy: false};
+const state = {documents: [], selected: null, detail: null, rules: null, view: "documents", busy: false, session: null};
 const labels = {documents: "Review queue", imports: "Import documents", exports: "Export history", rules: "Business rules", audit: "Activity log"};
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const displayDate = (value) => new Date(value).toLocaleString();
@@ -29,9 +29,14 @@ function notify(message, error = false) {
 }
 async function api(path, method = "GET", data) {
   const options = {method, headers: {}};
-  if (data !== undefined) { options.headers["Content-Type"] = "application/json"; options.body = JSON.stringify({...data, actor: $("#actor").value.trim()}); }
+  if (data !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    if (state.session?.csrf) options.headers["X-CSRF-Token"] = state.session.csrf;
+    options.body = JSON.stringify({...data, actor: state.session?.username || "Demo Reviewer"});
+  }
   const response = await fetch(path, options);
   const result = await response.json();
+  if (response.status === 401) { location.assign('/login'); throw new Error('Sign in to continue.'); }
   if (!response.ok) throw new Error(result.error || "Request failed.");
   return result;
 }
@@ -84,10 +89,10 @@ function textField(key, label, value, disabled, type = "text") {
   return `<label>${label}<input name="${key}" type="${type}" value="${escapeHtml(value || "")}" ${disabled ? "disabled" : ""} maxlength="2000"></label>`;
 }
 function renderDetail() {
-  const doc = state.detail; const fields = doc.fields; const locked = ["exported", "rejected"].includes(doc.status);
+  const doc = state.detail; const fields = doc.fields; const locked = ["exported", "rejected"].includes(doc.status) || state.session?.role === 'viewer';
   const issueBox = doc.issues.length ? `<div class="issue-box"><strong>${doc.issues.length} item${doc.issues.length === 1 ? "" : "s"} to resolve</strong><ul>${doc.issues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("")}</ul></div>` : `<div class="clear-box">✓ ${doc.status === "exported" ? "Exported snapshot is locked." : "Current fields pass the business rules."}</div>`;
   const amounts = [["subtotal_cents", "Subtotal"], ["tax_cents", "Tax"], ["total_cents", "Total"]].map(([key, label]) => textField(key, label, amountInput(fields[key]), locked)).join("");
-  $("#detail").innerHTML = `<div class="detail-head"><div><div class="section-label">DOCUMENT REVIEW</div><h2>${escapeHtml(fields.vendor || "Untitled document")}</h2><small>${escapeHtml(doc.source_name)} · revision ${doc.revision}</small></div>${badge(doc)}</div><div class="detail-body">${issueBox}<form id="edit-form"><div class="section-label">EXTRACTED DETAILS</div>${textField("vendor", "Vendor / payee", fields.vendor, locked)}<div class="form-grid">${textField("document_number", "Document number", fields.document_number, locked)}${textField("date", "Document date", fields.date, locked, "date")}</div><div class="form-grid">${amounts}</div><div class="amount-strip"><span>Document total</span><strong>${escapeHtml(formatMoney(fields.total_cents))}</strong></div><div class="section-label">ACCOUNTING DETAILS</div><div class="form-grid">${textField("account_code", "Account code", fields.account_code, locked)}${textField("department", "Department", fields.department, locked)}</div><label>Review notes<textarea name="notes" rows="2" maxlength="2000" ${locked ? "disabled" : ""}>${escapeHtml(fields.notes || "")}</textarea></label>${locked ? "" : '<button class="secondary" type="submit">Save corrections</button>'}</form><div class="review-actions">${doc.status === "draft" ? '<button class="primary" id="approve-record">Approve record</button><button class="danger" id="reject-record">Reject record</button>' : doc.status === "approved" ? '<button class="secondary" id="reopen-record">Reopen for review</button><button class="danger" id="reject-record">Reject record</button>' : doc.status === "rejected" ? '<button class="secondary" id="reopen-record">Reopen for review</button>' : `<a class="download" href="/api/exports/${doc.export_id}/download">Download its CSV snapshot ↗</a>`}</div><div id="reject-panel" hidden><label>Rejection reason<textarea id="reject-reason" rows="2" maxlength="2000" placeholder="Explain why this record should not be processed"></textarea></label><button class="danger" id="confirm-reject">Confirm rejection</button></div><div class="detail-tabs"><button class="active" data-detail-tab="source">Source text</button><button data-detail-tab="history">Record history</button><button data-detail-tab="warnings">Extraction notes</button></div><div id="source-tab"><pre class="raw">${escapeHtml(doc.raw_text || "No source text")}</pre></div><div id="history-tab" hidden>${eventsHtml(doc.events)}</div><div id="warnings-tab" hidden><p class="muted">These are the original parser observations. Current validation above uses your corrected fields.</p><pre class="raw">${escapeHtml(doc.extraction_warnings.join("\n") || "No parser warnings.")}</pre></div></div>`;
+  $("#detail").innerHTML = `<div class="detail-head"><div><div class="section-label">DOCUMENT REVIEW</div><h2>${escapeHtml(fields.vendor || "Untitled document")}</h2><small>${escapeHtml(doc.source_name)} · revision ${doc.revision}</small></div>${badge(doc)}</div><div class="detail-body">${issueBox}<form id="edit-form"><div class="section-label">EXTRACTED DETAILS</div>${textField("vendor", "Vendor / payee", fields.vendor, locked)}<div class="form-grid">${textField("document_number", "Document number", fields.document_number, locked)}${textField("date", "Document date", fields.date, locked, "date")}</div><div class="form-grid">${amounts}</div><div class="amount-strip"><span>Document total</span><strong>${escapeHtml(formatMoney(fields.total_cents))}</strong></div><div class="section-label">ACCOUNTING DETAILS</div><div class="form-grid">${textField("account_code", "Account code", fields.account_code, locked)}${textField("department", "Department", fields.department, locked)}</div><label>Review notes<textarea name="notes" rows="2" maxlength="2000" ${locked ? "disabled" : ""}>${escapeHtml(fields.notes || "")}</textarea></label>${locked ? "" : '<button class="secondary" type="submit">Save corrections</button>'}</form><div class="review-actions">${state.session?.role === 'viewer' ? '' : doc.status === "draft" ? '<button class="primary" id="approve-record">Approve record</button><button class="danger" id="reject-record">Reject record</button>' : doc.status === "approved" ? '<button class="secondary" id="reopen-record">Reopen for review</button><button class="danger" id="reject-record">Reject record</button>' : doc.status === "rejected" ? '<button class="secondary" id="reopen-record">Reopen for review</button>' : `<a class="download" href="/api/exports/${doc.export_id}/download">Download its CSV snapshot ↗</a>`}</div><div id="reject-panel" hidden><label>Rejection reason<textarea id="reject-reason" rows="2" maxlength="2000" placeholder="Explain why this record should not be processed"></textarea></label><button class="danger" id="confirm-reject">Confirm rejection</button></div><div class="detail-tabs"><button class="active" data-detail-tab="source">Source text</button><button data-detail-tab="history">Record history</button><button data-detail-tab="warnings">Extraction notes</button></div><div id="source-tab"><pre class="raw">${escapeHtml(doc.raw_text || "No source text")}</pre></div><div id="history-tab" hidden>${eventsHtml(doc.events)}</div><div id="warnings-tab" hidden><p class="muted">These are the original parser observations. Current validation above uses your corrected fields.</p><pre class="raw">${escapeHtml(doc.extraction_warnings.join("\n") || "No parser warnings.")}</pre></div></div>`;
   $("#edit-form").addEventListener("submit", (event) => {event.preventDefault(); run(saveDocument);});
   $("#approve-record")?.addEventListener("click", () => run(() => transition("approve")));
   $("#reject-record")?.addEventListener("click", () => {$("#reject-panel").hidden = !$("#reject-panel").hidden; $("#reject-reason").focus();});
@@ -144,9 +149,9 @@ async function showView(view) {
   document.querySelectorAll(".nav").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#view-name").textContent = labels[view];
   if (view === "exports") {
-    const [result, deliveryResult] = await Promise.all([api("/api/exports"), api("/api/bridge/deliveries")]);
+    const [result, deliveryResult] = await Promise.all([api("/api/exports"), state.session?.demo_mode === false ? Promise.resolve({deliveries: []}) : api("/api/bridge/deliveries")]);
     const deliveries = new Map(deliveryResult.deliveries.map((item) => [item.export_id, item.receipt]));
-    $("#export-list").innerHTML = '<p>Optional demo connector: start <code>python -m ledgerbridge.mock_erp</code> in a second terminal, then send an export to its separate ledger. Retrying the same batch does not post twice.</p>' + (result.exports.length ? result.exports.map((item) => `<div class="export-row"><div><strong>Export ${item.id.slice(0, 8)}</strong><small>${escapeHtml(displayDate(item.created_at))} · ${escapeHtml(item.actor)}</small>${deliveries.has(item.id) ? `<small>Demo ERP receipt ${deliveries.get(item.id).receipt_id.slice(0, 8)} · ${deliveries.get(item.id).record_count} records</small>` : ''}</div><div class="export-actions"><a class="download" href="/api/exports/${item.id}/download">Download CSV ↗</a><button class="secondary" data-send-demo="${item.id}">${deliveries.has(item.id) ? 'Verify / retry demo ERP' : 'Send to demo ERP'}</button></div></div>`).join("") : '<p>No exports yet. Approve records in the review queue, then create a CSV.</p>');
+    $("#export-list").innerHTML = (state.session?.demo_mode === false ? '' : '<p>Optional demo connector: start <code>python -m ledgerbridge.mock_erp</code> in a second terminal, then send an export to its separate ledger. Retrying the same batch does not post twice.</p>') + (result.exports.length ? result.exports.map((item) => `<div class="export-row"><div><strong>Export ${item.id.slice(0, 8)}</strong><small>${escapeHtml(displayDate(item.created_at))} · ${escapeHtml(item.actor)}</small>${deliveries.has(item.id) ? `<small>Demo ERP receipt ${deliveries.get(item.id).receipt_id.slice(0, 8)} · ${deliveries.get(item.id).record_count} records</small>` : ''}</div><div class="export-actions"><a class="download" href="/api/exports/${item.id}/download">Download CSV ↗</a>${state.session?.demo_mode === false || state.session?.role !== 'admin' && state.session?.role !== undefined ? '' : `<button class="secondary" data-send-demo="${item.id}">${deliveries.has(item.id) ? 'Verify / retry demo ERP' : 'Send to demo ERP'}</button>`}</div></div>`).join("") : '<p>No exports yet. Approve records in the review queue, then create a CSV.</p>');
     $("#export-list").querySelectorAll('[data-send-demo]').forEach((button) => button.addEventListener('click', () => run(async () => {
       const receipt = await api(`/api/exports/${button.dataset.sendDemo}/send-demo`, 'POST', {});
       await showView('exports'); notify(`${receipt.record_count} records reconciled with demo ERP. ${receipt.replayed ? 'Existing batch verified; no duplicate posting.' : 'New batch posted.'}`);
@@ -181,4 +186,23 @@ $("#export-approved").addEventListener("click", () => run(async () => {
   const result = await api("/api/exports", "POST", {}); await refresh(); await showView("exports");
   notify(`${result.record_count} approved records exported. Download the saved CSV below.`);
 }));
-run(refresh);
+async function initialize() {
+  const session = await api('/api/session').catch((error) => {
+    if (error.message !== 'Route not found.') throw error;
+    return {username: 'Demo Reviewer', role: 'admin', csrf: null, demo_mode: true};
+  });
+  state.session = session;
+  $('#identity').textContent = `${session.username} · ${session.role}`;
+  $('#logout').hidden = !session.csrf;
+  if (!session.demo_mode) {
+    $('#demo-import').hidden = true; $('#load-demo').hidden = true;
+  }
+  if (session.role === 'viewer') {
+    document.querySelector('.nav[data-view="imports"]').hidden = true;
+    $('#open-import').hidden = true;
+  }
+  if (session.role !== 'admin') { $('#export-approved').hidden = true; $('#rules-form button[type="submit"]').hidden = true; }
+  await run(refresh);
+}
+$('#logout').addEventListener('click', () => run(async () => { await api('/api/logout', 'POST', {}); location.assign('/login'); }));
+initialize().catch((error) => notify(error.message, true));

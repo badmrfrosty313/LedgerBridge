@@ -18,7 +18,7 @@
     <div class="sidebar-bottom"><span class="online-dot"></span> Local workspace<small>Data stays on this computer</small></div>
   </aside>
   <main>
-    <header><div class="breadcrumb">WORKSPACE <span>/</span> <span id="view-name">Review queue</span></div><label class="reviewer">Reviewer <input id="actor" value="Demo Reviewer" maxlength="120" aria-label="Reviewer name"></label></header>
+    <header><div class="breadcrumb">WORKSPACE <span>/</span> <span id="view-name">Review queue</span></div><div class="reviewer"><span id="identity">Local demo</span><button id="logout" class="quiet" hidden>Sign out</button></div></header>
     <div id="notification" role="status" aria-live="polite" hidden></div>
     <section id="documents" class="view">
       <div class="page-title"><div><p class="eyebrow">FROM DOCUMENT TO DECISION</p><h1>Keep your ledger moving.</h1><p>Review the details. Resolve exceptions. Export with confidence.</p></div><button class="primary" id="open-import">+ Import documents</button></div>
@@ -39,6 +39,6 @@
     <section id="exports" class="view" hidden><div class="page-title"><div><p class="eyebrow">REVIEWED. RECORDED. READY.</p><h1>Export approved records.</h1><p>Creates an immutable CSV snapshot and marks its records as exported.</p></div><button class="primary" id="export-approved">Create approved CSV</button></div><section class="panel padded" id="export-list"></section></section>
     <section id="rules" class="view" hidden><div class="page-title"><div><p class="eyebrow">YOUR BUSINESS, YOUR RULES</p><h1>Configure the workflow.</h1><p>Changes require fresh approval of any previously approved records.</p></div></div><section class="panel padded rules-panel"><form id="rules-form"><div class="form-grid"><label>Organization<input name="organization" required maxlength="120"></label><label>Currency<input name="currency" required pattern="[A-Z]{3}" maxlength="3"></label><label>Approval limit<input name="approval_limit" type="text" inputmode="decimal" required></label><label>Reconciliation tolerance (cents)<input name="tolerance" type="number" min="0" step="1" required></label></div><label>Account codes (comma-separated)<input name="account_codes"></label><label>Departments (comma-separated)<input name="departments"></label><label>Required fields (comma-separated)<input name="required_fields" required></label><p class="muted">Vendor, date, and total_cents are always required. Currency cannot change after records are imported.</p><button class="primary" type="submit">Save business rules</button></form></section></section>
     <section id="audit" class="view" hidden><div class="page-title"><div><p class="eyebrow">EVERY STEP HAS A STORY</p><h1>Activity log.</h1><p>Imports, edits, reviews, rule changes, and exports. Most recent 500 events.</p></div></div><section class="panel padded" id="audit-list"></section></section>
-    <footer>LedgerBridge v0.1 <span>Local, single-user prototype · Reviewer names are labels, not authenticated identities</span></footer>
+    <footer>LedgerBridge v0.2 <span>Review decisions and exports are recorded with your signed-in account</span></footer>
   </main>
 </body></html>

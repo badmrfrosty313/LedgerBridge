@@ -1,31 +1,30 @@
-# Local JSON API
+# JSON API
 
-Base URL: `http://127.0.0.1:8765`. Mutations require `Content-Type: application/json` and an `actor` label. Browser requests must be same-origin. No authenticated identity or multi-tenant isolation exists in v0.1.
+Production base URL is the configured HTTPS origin. Authenticated requests use the browser session cookie; `GET /api/session` returns the signed-in username, role, and per-session CSRF token. Every POST/PATCH after login sends that token in `X-CSRF-Token`. The server supplies the audit actor; request-body `actor` is ignored in authenticated mode.
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/api/health` | Version and service status |
-| GET | `/api/documents` | List records and current validation issues |
-| GET | `/api/documents/{id}` | Record, source, and history |
-| POST | `/api/import/text` | Import `{text, source_name, actor}` |
-| POST | `/api/import/csv` | Import `{text, source_name, actor}` |
-| POST | `/api/demo` | Load eight fixtures; idempotent exact imports |
-| PATCH | `/api/documents/{id}` | Correct `{fields, revision, actor}` |
-| POST | `/api/documents/{id}/approve` | Approve `{revision, actor}` |
-| POST | `/api/documents/{id}/reject` | Reject `{revision, actor, reason}` |
-| POST | `/api/documents/{id}/reopen` | Reopen `{revision, actor}` |
-| GET | `/api/rules` | Business rules and revision |
-| PATCH | `/api/rules` | Replace `{rules, revision, actor}` |
-| GET | `/api/events` | Latest 500 events |
-| POST | `/api/exports` | Export all currently approved records with `{actor}` |
-| GET | `/api/exports` | Saved export metadata |
-| GET | `/api/exports/{id}/download` | Download stored CSV snapshot |
-| GET | `/api/bridge/status` | Demo ERP connectivity |
-| GET | `/api/bridge/deliveries` | Reconciled delivery receipts |
-| POST | `/api/exports/{id}/send-demo` | Send saved export with `{actor}`; retry uses same target batch ID |
+| Method | Route | Access | Purpose |
+|---|---|---|---|
+| GET | `/api/health` | Public | Liveness and version |
+| POST | `/api/login` | Public | Sign in with `{username,password}` |
+| GET | `/api/session` | Signed in | Username, role, request token |
+| POST | `/api/logout` | Signed in + token | Revoke session |
+| GET | `/api/documents` | Viewer+ | Records and current issues |
+| GET | `/api/documents/{id}` | Viewer+ | Record, source, history |
+| POST | `/api/import/text` | Reviewer+ | `{text,source_name}` |
+| POST | `/api/import/csv` | Reviewer+ | `{text,source_name}` |
+| PATCH | `/api/documents/{id}` | Reviewer+ | `{fields,revision}` |
+| POST | `/api/documents/{id}/approve` | Reviewer+ | `{revision}` |
+| POST | `/api/documents/{id}/reject` | Reviewer+ | `{revision,reason}` |
+| POST | `/api/documents/{id}/reopen` | Reviewer+ | `{revision}` |
+| GET | `/api/rules` | Viewer+ | Rules and revision |
+| PATCH | `/api/rules` | Admin | `{rules,revision}` |
+| GET | `/api/events` | Viewer+ | Latest 500 events |
+| POST | `/api/exports` | Admin | Snapshot approved records |
+| GET | `/api/exports` | Viewer+ | Saved exports |
+| GET | `/api/exports/{id}/download` | Viewer+ | Saved CSV snapshot |
 
-Money fields in record edits are integer cents: `subtotal_cents`, `tax_cents`, `total_cents`. Other editable fields: `vendor`, `document_number`, `date`, `account_code`, `department`, `notes`. A blank optional amount is null. Dates use YYYY-MM-DD. Reject invalid dates or amounts; do not silently round.
+Local demo and authenticated local modes also offer `POST /api/demo`, `GET /api/bridge/status`, `GET /api/bridge/deliveries`, and `POST /api/exports/{id}/send-demo`. The demo is disabled on the public deployment path.
 
-Revisions implement optimistic concurrency. A stale revision returns HTTP 409. Validation conflicts also return 409. Invalid inputs return 400, forbidden host/origin requests 403, unknown records/routes 404, excessive bodies 413, wrong content types 415. Errors use `{ "error": "explanation" }`.
+Money fields in edits are integer cents: `subtotal_cents`, `tax_cents`, `total_cents`. Other editable fields: `vendor`, `document_number`, `date`, `account_code`, `department`, `notes`. Dates use YYYY-MM-DD. A stale revision or validation conflict returns 409; bad input 400; an unauthenticated request 401; missing permission/token or wrong origin/host 403; missing resource 404; excessive body 413; wrong content type 415. Errors return `{"error":"explanation"}`.
 
-Imports and exports use database transactions. Exports only include approved records and revalidate inside the transaction. Exported records cannot be edited, reopened, rejected, or exported again. Previously saved exports remain downloadable.
+Imports and exports use SQLite transactions. Exports revalidate approvals inside the transaction and lock exported records. Saved snapshots remain downloadable and demo ERP retries use stable batch IDs.

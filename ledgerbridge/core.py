@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import re
 import sqlite3
 import uuid
@@ -109,7 +110,18 @@ def csv_cell(value):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.parent.exists():
+            self.path.parent.mkdir(parents=True, mode=0o700)
+        if self.path.exists():
+            with sqlite3.connect(self.path) as previous:
+                version = previous.execute("PRAGMA user_version").fetchone()[0]
+                if version > 2:
+                    raise WorkflowError("Database was created by a newer LedgerBridge version.")
+                old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
+                if version == 0 and old_schema:
+                    from .maintenance import backup_database
+                    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+                    backup_database(self.path, self.path.with_name(f"{self.path.name}.pre-v2-{stamp}.bak"))
         with self.connect() as db:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
@@ -127,6 +139,10 @@ class Store:
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
+            if db.execute("PRAGMA user_version").fetchone()[0] == 0:
+                db.execute("PRAGMA user_version=1")
+        if os.name == "posix" and self.path.exists():
+            os.chmod(self.path, 0o600)
 
     @contextmanager
     def connect(self, write=False):
@@ -299,13 +315,15 @@ class Store:
         if type(revision) is not int or row["revision"] != revision:
             raise WorkflowError("Record changed. Refresh before saving or reviewing.", 409)
 
-    def transition(self, document_id, action, revision, actor, reason=""):
+    def transition(self, document_id, action, revision, actor, reason="", independent=False):
         with self.connect(write=True) as db:
             row = self.get(db, document_id)
             self.check_revision(row, revision)
             if action == "approve":
                 if row["status"] != "draft":
                     raise WorkflowError("Only draft records can be approved.", 409)
+                if independent and db.execute("SELECT 1 FROM events WHERE document_id=? AND action IN ('imported','edited') AND actor=? LIMIT 1", (document_id, actor)).fetchone():
+                    raise WorkflowError("A different reviewer must approve a record you imported or corrected.", 409)
                 issues = self.issues(db, row)
                 if issues:
                     raise WorkflowError("Resolve validation issues before approval: " + " ".join(i["message"] for i in issues), 409)
