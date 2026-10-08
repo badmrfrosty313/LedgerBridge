@@ -1,0 +1,152 @@
+{
+  "source_note": "Fully invented synthetic examples created for this release. Names, identifiers, dates, amounts, and document text are not copied from customer or employer records. The phone number uses a reserved fictional 555 range.",
+  "fixtures": [
+    {
+      "id": "vendor_invoice_software",
+      "family": "vendor_invoice",
+      "lines": [
+        "ORBITAL CLOUD SERVICES",
+        "INVOICE",
+        "Bill To CEDAR DEMO COMPANY",
+        "Invoice # CLOUD-801",
+        "Invoice Date 08/03/2026",
+        "Hosted workspace 240.00",
+        "Training session 60.00",
+        "Subtotal 300.00",
+        "Tax 21.00",
+        "Total Due 321.00"
+      ],
+      "expected": {
+        "document_number": "CLOUD-801",
+        "date": "2026-08-03",
+        "subtotal_cents": 30000,
+        "tax_cents": 2100,
+        "total_cents": 32100
+      }
+    },
+    {
+      "id": "vendor_invoice_glass",
+      "family": "vendor_invoice",
+      "lines": [
+        "COPPER WINDOW WORKS",
+        "INVOICE",
+        "Bill To CEDAR DEMO COMPANY",
+        "Invoice # WINDOW-802",
+        "Invoice Date 08/04/2026",
+        "Window inspection 48.00",
+        "Subtotal 48.00",
+        "Tax 0.00",
+        "Total Due 48.00"
+      ],
+      "expected": {
+        "document_number": "WINDOW-802",
+        "date": "2026-08-04",
+        "subtotal_cents": 4800,
+        "tax_cents": 0,
+        "total_cents": 4800
+      }
+    },
+    {
+      "id": "check_request_standard",
+      "family": "check_request",
+      "lines": [
+        "CEDAR DEMO COMPANY",
+        "CHECK REQUEST",
+        "Request Date 08/05/2026",
+        "Requested By DEMO REQUESTER",
+        "Vendor Name MAPLE DEMO CATERING",
+        "Description Workshop refreshments",
+        "Amount 84.75",
+        "TOTAL AMOUNT REQUESTED 84.75"
+      ],
+      "expected": {
+        "date": "2026-08-05",
+        "total_cents": 8475
+      }
+    },
+    {
+      "id": "check_request_small_format",
+      "family": "check_request",
+      "lines": [
+        "CEDAR DEMO COMPANY",
+        "CHECK REQUEST",
+        "Date 08/06/2026",
+        "Pay To BIRCH DEMO COURIER",
+        "Purpose Sample delivery",
+        "TOTAL AMOUNT REQUESTED 32.00"
+      ],
+      "expected": {
+        "date": "2026-08-06",
+        "total_cents": 3200
+      }
+    },
+    {
+      "id": "travel_voucher",
+      "family": "travel_voucher",
+      "lines": [
+        "DEMO TRAVEL VOUCHER",
+        "Traveler DEMO TRAVELER",
+        "Date 08/07/2026",
+        "Purpose of Travel Synthetic workshop",
+        "Mileage 18.00",
+        "Parking 6.00",
+        "Tolls 3.00",
+        "TOTAL 27.00"
+      ],
+      "expected": {
+        "date": "2026-08-07",
+        "total_cents": 2700
+      }
+    },
+    {
+      "id": "telecom_statement_summary",
+      "family": "telecom_statement",
+      "lines": [
+        "PINE DEMO TELECOM",
+        "Billing Date 08/08/2026",
+        "Account Details",
+        "Service activity",
+        "Monthly charges",
+        "Wireless services 80.00",
+        "Fees 4.00",
+        "Total Amount 84.00"
+      ],
+      "expected": {
+        "date": "2026-08-08",
+        "total_cents": 8400
+      }
+    },
+    {
+      "id": "telecom_statement_alternate",
+      "family": "telecom_statement",
+      "lines": [
+        "PINE DEMO TELECOM",
+        "Billing Date 08/09/2026",
+        "Service activity",
+        "Account details",
+        "Previous balance 0.00",
+        "Current charges 120.00",
+        "Total Due 120.00"
+      ],
+      "expected": {
+        "date": "2026-08-09",
+        "total_cents": 12000
+      }
+    },
+    {
+      "id": "telecom_line_detail",
+      "family": "telecom_line_detail",
+      "lines": [
+        "DEMO TEST LINE",
+        "202-555-0142",
+        "Wireless service",
+        "Usage Details",
+        "Monthly charge 12.50",
+        "Total 12.50"
+      ],
+      "expected": {
+        "total_cents": 1250
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+check,expected,actual,pass,notes
+Invalid batch,Entire batch rolls back,,,
+Classification,11 cases match expected.json issue codes,,,
+Exact reimport,No new documents,,,
+Exceptions,3 rejected and 4 corrected,,,
+Approvals,8 independently reviewed,,,
+Export,8 rows and total USD 638.00,,,
+Formula escape,Formula vendor is prefixed with apostrophe,,,
+Snapshot,Backup restores accounts records and export,,,
+Timing,Record import and review minutes,,,
+Usability,Record confusing steps and observed errors,,,

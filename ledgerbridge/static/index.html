@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LedgerBridge — Review workspace</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-icon">LB</span><span>LedgerBridge<small>Financial workflow studio</small></span></a>
+    <div class="workspace-label">WORKSPACE</div>
+    <nav aria-label="Workspace navigation">
+      <button class="nav active" data-view="documents">Review queue <span id="queue-badge">0</span></button>
+      <button class="nav" data-view="imports">Import documents</button>
+      <button class="nav" data-view="exports">Export history</button>
+      <button class="nav" data-view="rules">Business rules</button>
+      <button class="nav" data-view="audit">Activity log</button>
+    </nav>
+    <div class="sidebar-bottom"><span class="online-dot"></span> Local workspace<small>Data stays on this computer</small></div>
+  </aside>
+  <main>
+    <header><div class="breadcrumb">WORKSPACE <span>/</span> <span id="view-name">Review queue</span></div><div class="reviewer"><span id="identity">Local demo</span><button id="logout" class="quiet" hidden>Sign out</button></div></header>
+    <div id="notification" role="status" aria-live="polite" hidden></div>
+    <section id="documents" class="view">
+      <div class="page-title"><div><p class="eyebrow">FROM DOCUMENT TO DECISION</p><h1>Keep your ledger moving.</h1><p>Review the details. Resolve exceptions. Export with confidence.</p></div><button class="primary" id="open-import">+ Import documents</button></div>
+      <div class="stats" id="stats"></div>
+      <div class="queue-layout">
+        <section class="panel queue-panel"><div class="panel-heading"><h2>Document queue</h2><button class="quiet" id="refresh">Refresh</button></div>
+          <div class="filters"><input id="search" type="search" placeholder="Search vendor or document…" aria-label="Search documents"><select id="filter" aria-label="Filter status"><option value="all">All records</option><option value="exceptions">Needs attention</option><option value="ready">Ready for review</option><option value="approved">Approved</option><option value="exported">Exported</option><option value="rejected">Rejected</option></select></div>
+          <div id="document-list"></div>
+        </section>
+        <section class="panel detail-panel" id="detail"><div class="empty"><div class="empty-symbol">↔</div><h2>Your bridge starts here.</h2><p>Load the example documents or import your own text/CSV to begin.</p><button class="primary" id="load-demo">Load 8 demo documents</button><small>Includes invoices, check requests, travel, and telecom billing.</small></div></section>
+      </div>
+    </section>
+    <section id="imports" class="view" hidden>
+      <div class="page-title"><div><p class="eyebrow">A SINGLE PLACE TO START</p><h1>Bring your documents in.</h1><p>Paste document text or upload a structured CSV. Every record starts in review.</p></div></div>
+      <div class="import-grid"><section class="panel padded"><h2>Document text</h2><p>Paste copied invoice text, receipt text, or an OCR result.</p><form id="text-import"><label>Source name<input name="source_name" value="Pasted invoice" maxlength="200" required></label><label>Document contents<textarea name="text" rows="13" placeholder="NORTHSTAR SERVICES LLC&#10;Invoice # NS-1001&#10;Invoice Date 10/01/2026&#10;Subtotal 299.00&#10;Tax 20.93&#10;Total Due 319.93" required></textarea></label><button class="primary" type="submit">Extract &amp; add to review</button></form></section>
+      <section class="panel padded"><h2>Structured CSV</h2><p>Required headers: <code>vendor,date,total</code>. Amounts are decimal currency, dates use YYYY-MM-DD.</p><p>Optional: <code>document_number,subtotal,tax,account_code,department,notes</code>.</p><form id="csv-import"><label class="file-drop">Choose a CSV file<input name="file" type="file" accept=".csv,text/csv" required></label><button class="primary" type="submit">Validate &amp; import CSV</button></form><div class="divider"></div><h2>Explore with examples</h2><p>Eight fully invented documents for exploring the workflow. Loading them again won't create exact duplicates.</p><button class="secondary" id="demo-import">Load demo documents</button><p class="muted">PDF/image OCR and Excel import are planned extensions. This version accepts text and CSV.</p></section></div>
+    </section>
+    <section id="exports" class="view" hidden><div class="page-title"><div><p class="eyebrow">REVIEWED. RECORDED. READY.</p><h1>Export approved records.</h1><p>Creates an immutable CSV snapshot and marks its records as exported.</p></div><button class="primary" id="export-approved">Create approved CSV</button></div><section class="panel padded" id="export-list"></section></section>
+    <section id="rules" class="view" hidden><div class="page-title"><div><p class="eyebrow">YOUR BUSINESS, YOUR RULES</p><h1>Configure the workflow.</h1><p>Changes require fresh approval of any previously approved records.</p></div></div><section class="panel padded rules-panel"><form id="rules-form"><div class="form-grid"><label>Organization<input name="organization" required maxlength="120"></label><label>Currency<input name="currency" required pattern="[A-Z]{3}" maxlength="3"></label><label>Approval limit<input name="approval_limit" type="text" inputmode="decimal" required></label><label>Reconciliation tolerance (cents)<input name="tolerance" type="number" min="0" step="1" required></label></div><label>Account codes (comma-separated)<input name="account_codes"></label><label>Departments (comma-separated)<input name="departments"></label><label>Required fields (comma-separated)<input name="required_fields" required></label><p class="muted">Vendor, date, and total_cents are always required. Currency cannot change after records are imported.</p><button class="primary" type="submit">Save business rules</button></form></section></section>
+    <section id="audit" class="view" hidden><div class="page-title"><div><p class="eyebrow">EVERY STEP HAS A STORY</p><h1>Activity log.</h1><p>Imports, edits, reviews, rule changes, and exports. Most recent 500 events.</p></div></div><section class="panel padded" id="audit-list"></section></section>
+    <footer>LedgerBridge v0.2 <span>Review decisions and exports are recorded with your signed-in account</span></footer>
+  </main>
+</body></html>

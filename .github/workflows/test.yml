@@ -1,0 +1,68 @@
+name: LedgerBridge checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m pilot.run
+      - run: python scripts/release.py --check
+      - run: python -m compileall -q ledgerbridge
+      - run: python -m pip install -r requirements-prod.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check ledgerbridge/static/app.js
+      - run: node --check ledgerbridge/static/login.js
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - run: python -m pip install -r requirements-prod.txt
+      - run: npx playwright install --with-deps chromium
+      - name: Verify browser workflow
+        run: |
+          python -c "from ledgerbridge.auth import Auth; from ledgerbridge.core import Store; a=Auth(Store('/tmp/ledgerbridge-browser.sqlite3')); a.add_user('tester','TestOnlyPassword2026!','admin'); a.add_user('approver','TestOnlyApproverPassword2026!','reviewer')"
+          python -m ledgerbridge.server --local-auth --db /tmp/ledgerbridge-browser.sqlite3 > /tmp/ledgerbridge-server.log 2>&1 &
+          python -m ledgerbridge.mock_erp --db /tmp/ledgerbridge-demo-erp.sqlite3 > /tmp/ledgerbridge-erp.log 2>&1 &
+          trap 'cat /tmp/ledgerbridge-server.log' EXIT
+          python -c "import time, urllib.request; time.sleep(1); urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
+          npm run test:browser
+      - name: Verify production Waitress startup
+        run: |
+          python -c "from ledgerbridge.auth import Auth; from ledgerbridge.core import Store; Auth(Store('/tmp/ledgerbridge-production.sqlite3')).add_user('admin','TestOnlyPassword2026!','admin')"
+          python -m ledgerbridge.server --public-origin https://ledger.example --port 8767 --db /tmp/ledgerbridge-production.sqlite3 > /tmp/ledgerbridge-production.log 2>&1 &
+          trap 'cat /tmp/ledgerbridge-production.log' EXIT
+          python -c "import time, urllib.request; time.sleep(1); r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8767/api/health',headers={'Host':'ledger.example'})); assert r.status==200"
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Publish immutable version release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release.py
