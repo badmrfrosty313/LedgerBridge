@@ -61,6 +61,7 @@ const assert = require('node:assert/strict');
  await page.getByRole('button',{name:'Save business rules'}).click();
  await page.getByText('Business rules saved.',{exact:false}).waitFor();
  await page.getByRole('button',{name:'Review queue',exact:false}).click();
+ await page.locator('.doc-row').filter({hasText:'TEST GLASS REPAIR LLC'}).click();
  assert.equal(await page.locator('#detail .badge').textContent(),'Ready for review');
  await page.setViewportSize({width:390,height:844});
 
