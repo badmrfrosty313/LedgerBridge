@@ -1,4 +1,4 @@
-"""Invoice-to-Ledger Automation prototype."""
+"""Deterministic extraction adapted from Kyle Hawkins's earlier prototype."""
 
 from .classifier import classify_document
 from .parser import ParsedDocument, parse_document

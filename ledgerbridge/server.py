@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .core import Store, WorkflowError
+from . import __version__
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
@@ -111,7 +112,7 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 if self.command == "POST" and path == "/api/login":
                     return self.login()
                 if self.command == "GET" and path == "/api/health":
-                    return self.respond({"status": "ok", "version": "0.2.0"})
+                    return self.respond({"status": "ok", "version": __version__})
                 token, cookie_name = self.session_token()
                 self.identity = auth.identity(token)
                 if not self.identity:
@@ -134,7 +135,7 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                     name, mime = static_files[path]
                     return self.respond((STATIC / name).read_bytes(), content_type=mime)
                 if path == "/api/health":
-                    return self.respond({"status": "ok", "version": "0.2.0", "mode": "explicit-local-demo"})
+                    return self.respond({"status": "ok", "version": __version__, "mode": "explicit-local-demo"})
                 if path == "/api/documents":
                     return self.respond({"documents": store.list_documents()})
                 if path == "/api/rules":

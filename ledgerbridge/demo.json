@@ -1,165 +1,152 @@
 {
-  "source_note": "Anonymized semantic fixtures derived from real workflow documents supplied for testing. No original names, phone numbers, addresses, account identifiers, signatures, or organization-specific private data are stored.",
+  "source_note": "Fully invented synthetic examples created for this release. Names, identifiers, dates, amounts, and document text are not copied from customer or employer records. The phone number uses a reserved fictional 555 range.",
   "fixtures": [
     {
       "id": "vendor_invoice_software",
       "family": "vendor_invoice",
       "lines": [
-        "TEST SOFTWARE VENDOR LLC",
+        "ORBITAL CLOUD SERVICES",
         "INVOICE",
-        "Bill To TEST ORGANIZATION",
-        "Ship To TEST ORGANIZATION",
-        "Invoice # INV-3001",
-        "Invoice Date 10/01/2026",
-        "Due Date 10/31/2026",
-        "Terms Net 30",
-        "Monthly Online Intake Fee 150.00",
-        "Monthly Integration Fee 150.00",
-        "Monthly Gateway Fee 150.00",
-        "Monthly Workflows Fee 300.00",
-        "Monthly Storage Fee 300.00",
-        "Subtotal 1,050.00",
-        "Tax 0.00",
-        "Balance Due 1,050.00"
+        "Bill To CEDAR DEMO COMPANY",
+        "Invoice # CLOUD-801",
+        "Invoice Date 08/03/2026",
+        "Hosted workspace 240.00",
+        "Training session 60.00",
+        "Subtotal 300.00",
+        "Tax 21.00",
+        "Total Due 321.00"
       ],
       "expected": {
-        "document_number": "INV-3001",
-        "date": "2026-10-01",
-        "subtotal_cents": 105000,
-        "tax_cents": 0,
-        "total_cents": 105000
+        "document_number": "CLOUD-801",
+        "date": "2026-08-03",
+        "subtotal_cents": 30000,
+        "tax_cents": 2100,
+        "total_cents": 32100
       }
     },
     {
       "id": "vendor_invoice_glass",
       "family": "vendor_invoice",
       "lines": [
-        "TEST GLASS REPAIR LLC",
+        "COPPER WINDOW WORKS",
         "INVOICE",
-        "Bill To TEST ORGANIZATION",
-        "Invoice # INV-2001",
-        "Invoice Date 09/24/2026",
-        "Description of services performed",
-        "Auto glass repair service 180.00",
-        "Subtotal 180.00",
-        "Total Due 180.00"
+        "Bill To CEDAR DEMO COMPANY",
+        "Invoice # WINDOW-802",
+        "Invoice Date 08/04/2026",
+        "Window inspection 48.00",
+        "Subtotal 48.00",
+        "Tax 0.00",
+        "Total Due 48.00"
       ],
       "expected": {
-        "document_number": "INV-2001",
-        "date": "2026-09-24",
-        "total_cents": 18000
+        "document_number": "WINDOW-802",
+        "date": "2026-08-04",
+        "subtotal_cents": 4800,
+        "tax_cents": 0,
+        "total_cents": 4800
       }
     },
     {
       "id": "check_request_standard",
       "family": "check_request",
       "lines": [
-        "TEST ORGANIZATION",
+        "CEDAR DEMO COMPANY",
         "CHECK REQUEST",
-        "Request Date 10/01/2026",
-        "Requested By TEST STAFF MEMBER",
-        "Vendor Name TEST VENDOR LLC",
-        "Description Monthly service",
-        "Amount 432.10",
-        "TOTAL AMOUNT REQUESTED 432.10",
-        "Approved By TEST APPROVER"
+        "Request Date 08/05/2026",
+        "Requested By DEMO REQUESTER",
+        "Vendor Name MAPLE DEMO CATERING",
+        "Description Workshop refreshments",
+        "Amount 84.75",
+        "TOTAL AMOUNT REQUESTED 84.75"
       ],
       "expected": {
-        "date": "2026-10-01",
-        "total_cents": 43210
+        "date": "2026-08-05",
+        "total_cents": 8475
       }
     },
     {
       "id": "check_request_small_format",
       "family": "check_request",
       "lines": [
-        "TEST ORGANIZATION",
+        "CEDAR DEMO COMPANY",
         "CHECK REQUEST",
-        "Date 10/01/2026",
-        "Pay To TEST VENDOR TWO LLC",
-        "Purpose Office service",
-        "TOTAL AMOUNT REQUESTED 95.00",
-        "Signature TEST APPROVER"
+        "Date 08/06/2026",
+        "Pay To BIRCH DEMO COURIER",
+        "Purpose Sample delivery",
+        "TOTAL AMOUNT REQUESTED 32.00"
       ],
       "expected": {
-        "date": "2026-10-01",
-        "total_cents": 9500
+        "date": "2026-08-06",
+        "total_cents": 3200
       }
     },
     {
       "id": "travel_voucher",
       "family": "travel_voucher",
       "lines": [
-        "STATE TRAVEL VOUCHER",
-        "Traveler TEST EMPLOYEE",
-        "Official Headquarters TEST CITY FL",
-        "Date 09/20/2026",
-        "Purpose of Travel Program meeting",
-        "Mileage 42.00",
-        "Parking 15.50",
-        "Tolls 8.00",
-        "TOTAL 65.50"
+        "DEMO TRAVEL VOUCHER",
+        "Traveler DEMO TRAVELER",
+        "Date 08/07/2026",
+        "Purpose of Travel Synthetic workshop",
+        "Mileage 18.00",
+        "Parking 6.00",
+        "Tolls 3.00",
+        "TOTAL 27.00"
       ],
       "expected": {
-        "date": "2026-09-20",
-        "total_cents": 6550
+        "date": "2026-08-07",
+        "total_cents": 2700
       }
     },
     {
       "id": "telecom_statement_summary",
       "family": "telecom_statement",
       "lines": [
-        "TEST TELECOM",
-        "TEST ORGANIZATION",
-        "Billing Date 09/01/2026",
+        "PINE DEMO TELECOM",
+        "Billing Date 08/08/2026",
         "Account Details",
         "Service activity",
         "Monthly charges",
-        "Wireless services 420.00",
-        "Government fees and taxes 38.25",
-        "Total Amount 458.25"
+        "Wireless services 80.00",
+        "Fees 4.00",
+        "Total Amount 84.00"
       ],
       "expected": {
-        "date": "2026-09-01",
-        "total_cents": 45825
+        "date": "2026-08-08",
+        "total_cents": 8400
       }
     },
     {
       "id": "telecom_statement_alternate",
       "family": "telecom_statement",
       "lines": [
-        "TEST TELECOM",
-        "TEST ORGANIZATION",
-        "Billing Date 10/01/2026",
+        "PINE DEMO TELECOM",
+        "Billing Date 08/09/2026",
         "Service activity",
-        "Monthly charges",
         "Account details",
         "Previous balance 0.00",
-        "Current charges 512.40",
-        "Total Due 512.40"
+        "Current charges 120.00",
+        "Total Due 120.00"
       ],
       "expected": {
-        "date": "2026-10-01",
-        "total_cents": 51240
+        "date": "2026-08-09",
+        "total_cents": 12000
       }
     },
     {
       "id": "telecom_line_detail",
       "family": "telecom_line_detail",
       "lines": [
-        "TEST USER - PHONE",
-        "555-010-1000",
+        "DEMO TEST LINE",
+        "202-555-0142",
         "Wireless service",
-        "Unlimited",
-        "August 2 - September 1",
         "Usage Details",
-        "Monthly charge 30.00",
-        "Total 30.00"
+        "Monthly charge 12.50",
+        "Total 12.50"
       ],
       "expected": {
-        "total_cents": 3000
+        "total_cents": 1250
       }
     }
   ]
 }
-
