@@ -11,6 +11,7 @@ python -m ledgerbridge.server --local-demo
 ```
 
 Open http://127.0.0.1:8765 and load the eight examples. This explicitly selected local mode has no login and only listens on loopback. Do not place real financial documents in the demo database.
+The demo uses its own `data/ledgerbridge-demo.sqlite3` and cannot be pointed at the production database.
 
 ## Authenticated local testing
 

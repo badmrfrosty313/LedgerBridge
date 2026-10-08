@@ -226,6 +226,10 @@ def main():
         parsed = urlsplit(args.public_origin)
         if parsed.scheme != "https" or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password or args.public_origin.endswith("/"):
             parser.error("--public-origin must be an HTTPS origin without a path, query, credentials, or trailing slash")
+    if args.local_demo:
+        if args.db != "data/ledgerbridge.sqlite3":
+            parser.error("Local demo uses a separate fixed database; --db is unavailable in --local-demo mode")
+        args.db = "data/ledgerbridge-demo.sqlite3"
     store = Store(args.db)
     auth = None if args.local_demo else Auth(store)
     if auth and not auth.has_users():
