@@ -1,5 +1,7 @@
 # LedgerBridge
 
+[Download the one-page feature overview (PDF)](docs/LedgerBridge_One_Page_Overview.pdf)
+
 LedgerBridge imports business documents, finds validation exceptions, records human review, creates durable CSV exports, and can demonstrate delivery to a separate simulated ERP. The code supports a single organization per database. Demo and pilot documents are fully invented synthetic examples.
 
 This is a completed portfolio project, maintained as time permits. Support, response times, compatibility, and future updates are not guaranteed. It is released under [MIT](LICENSE); see [dependency attribution](THIRD_PARTY_NOTICES.md) and [release notes](docs/RELEASE_NOTES.md).
