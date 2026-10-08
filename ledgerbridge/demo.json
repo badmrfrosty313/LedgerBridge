@@ -1,0 +1,165 @@
+{
+  "source_note": "Anonymized semantic fixtures derived from real workflow documents supplied for testing. No original names, phone numbers, addresses, account identifiers, signatures, or organization-specific private data are stored.",
+  "fixtures": [
+    {
+      "id": "vendor_invoice_software",
+      "family": "vendor_invoice",
+      "lines": [
+        "TEST SOFTWARE VENDOR LLC",
+        "INVOICE",
+        "Bill To TEST ORGANIZATION",
+        "Ship To TEST ORGANIZATION",
+        "Invoice # INV-3001",
+        "Invoice Date 10/01/2026",
+        "Due Date 10/31/2026",
+        "Terms Net 30",
+        "Monthly Online Intake Fee 150.00",
+        "Monthly Integration Fee 150.00",
+        "Monthly Gateway Fee 150.00",
+        "Monthly Workflows Fee 300.00",
+        "Monthly Storage Fee 300.00",
+        "Subtotal 1,050.00",
+        "Tax 0.00",
+        "Balance Due 1,050.00"
+      ],
+      "expected": {
+        "document_number": "INV-3001",
+        "date": "2026-10-01",
+        "subtotal_cents": 105000,
+        "tax_cents": 0,
+        "total_cents": 105000
+      }
+    },
+    {
+      "id": "vendor_invoice_glass",
+      "family": "vendor_invoice",
+      "lines": [
+        "TEST GLASS REPAIR LLC",
+        "INVOICE",
+        "Bill To TEST ORGANIZATION",
+        "Invoice # INV-2001",
+        "Invoice Date 09/24/2026",
+        "Description of services performed",
+        "Auto glass repair service 180.00",
+        "Subtotal 180.00",
+        "Total Due 180.00"
+      ],
+      "expected": {
+        "document_number": "INV-2001",
+        "date": "2026-09-24",
+        "total_cents": 18000
+      }
+    },
+    {
+      "id": "check_request_standard",
+      "family": "check_request",
+      "lines": [
+        "TEST ORGANIZATION",
+        "CHECK REQUEST",
+        "Request Date 10/01/2026",
+        "Requested By TEST STAFF MEMBER",
+        "Vendor Name TEST VENDOR LLC",
+        "Description Monthly service",
+        "Amount 432.10",
+        "TOTAL AMOUNT REQUESTED 432.10",
+        "Approved By TEST APPROVER"
+      ],
+      "expected": {
+        "date": "2026-10-01",
+        "total_cents": 43210
+      }
+    },
+    {
+      "id": "check_request_small_format",
+      "family": "check_request",
+      "lines": [
+        "TEST ORGANIZATION",
+        "CHECK REQUEST",
+        "Date 10/01/2026",
+        "Pay To TEST VENDOR TWO LLC",
+        "Purpose Office service",
+        "TOTAL AMOUNT REQUESTED 95.00",
+        "Signature TEST APPROVER"
+      ],
+      "expected": {
+        "date": "2026-10-01",
+        "total_cents": 9500
+      }
+    },
+    {
+      "id": "travel_voucher",
+      "family": "travel_voucher",
+      "lines": [
+        "STATE TRAVEL VOUCHER",
+        "Traveler TEST EMPLOYEE",
+        "Official Headquarters TEST CITY FL",
+        "Date 09/20/2026",
+        "Purpose of Travel Program meeting",
+        "Mileage 42.00",
+        "Parking 15.50",
+        "Tolls 8.00",
+        "TOTAL 65.50"
+      ],
+      "expected": {
+        "date": "2026-09-20",
+        "total_cents": 6550
+      }
+    },
+    {
+      "id": "telecom_statement_summary",
+      "family": "telecom_statement",
+      "lines": [
+        "TEST TELECOM",
+        "TEST ORGANIZATION",
+        "Billing Date 09/01/2026",
+        "Account Details",
+        "Service activity",
+        "Monthly charges",
+        "Wireless services 420.00",
+        "Government fees and taxes 38.25",
+        "Total Amount 458.25"
+      ],
+      "expected": {
+        "date": "2026-09-01",
+        "total_cents": 45825
+      }
+    },
+    {
+      "id": "telecom_statement_alternate",
+      "family": "telecom_statement",
+      "lines": [
+        "TEST TELECOM",
+        "TEST ORGANIZATION",
+        "Billing Date 10/01/2026",
+        "Service activity",
+        "Monthly charges",
+        "Account details",
+        "Previous balance 0.00",
+        "Current charges 512.40",
+        "Total Due 512.40"
+      ],
+      "expected": {
+        "date": "2026-10-01",
+        "total_cents": 51240
+      }
+    },
+    {
+      "id": "telecom_line_detail",
+      "family": "telecom_line_detail",
+      "lines": [
+        "TEST USER - PHONE",
+        "555-010-1000",
+        "Wireless service",
+        "Unlimited",
+        "August 2 - September 1",
+        "Usage Details",
+        "Monthly charge 30.00",
+        "Total 30.00"
+      ],
+      "expected": {
+        "total_cents": 3000
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,40 @@
+name: LedgerBridge checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q ledgerbridge
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check ledgerbridge/static/app.js
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - name: Verify browser workflow
+        run: |
+          python -m ledgerbridge.server --db /tmp/ledgerbridge-browser.sqlite3 > /tmp/ledgerbridge-server.log 2>&1 &
+          trap 'cat /tmp/ledgerbridge-server.log' EXIT
+          python -c "import time, urllib.request; time.sleep(1); urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
+          npm run test:browser

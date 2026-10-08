@@ -1,0 +1,46 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+(async () => {
+ const browser = await chromium.launch({headless:true, args:['--no-sandbox']});
+ const page = await browser.newPage({viewport:{width:1440,height:1100}});
+ const errors = [];
+ page.on('pageerror', e => errors.push(e.message));
+ await page.goto('http://127.0.0.1:8765');
+ await page.getByRole('button', {name:'Load 8 demo documents'}).click();
+ await page.getByText('8 demo records added;', {exact:false}).waitFor();
+ assert.equal(await page.locator('.doc-row').count(),8);
+ await page.locator('input[name="account_code"]').fill('5100');
+ await page.locator('input[name="department"]').fill('Technology');
+ await page.getByRole('button', {name:'Save corrections'}).click();
+ await page.getByText('Corrections saved.', {exact:false}).waitFor();
+ await page.getByRole('button', {name:'Approve record',exact:true}).click();
+ await page.getByText('Record approved.', {exact:false}).waitFor();
+
+ await page.getByRole('button', {name:'Export history',exact:true}).click();
+ await page.getByRole('button', {name:'Create approved CSV'}).click();
+ await page.getByText('1 approved records exported.',{exact:false}).waitFor();
+ const downloadURL=await page.locator('a.download').getAttribute('href');
+ const response=await page.request.get(downloadURL);
+ assert.equal(response.status(),200);
+ assert.match(await response.text(),/1050.00/);
+ await page.getByRole('button',{name:'Review queue',exact:false}).click();
+ await page.locator('.doc-row').filter({hasText:'TEST GLASS REPAIR LLC'}).click();
+ await page.locator('input[name="account_code"]').fill('5300');
+ await page.locator('input[name="department"]').fill('Operations');
+ await page.getByRole('button', {name:'Save corrections'}).click();
+ await page.getByText('Corrections saved.', {exact:false}).waitFor();
+ await page.getByRole('button', {name:'Approve record',exact:true}).click();
+ await page.getByText('Record approved.', {exact:false}).waitFor();
+ await page.getByRole('button',{name:'Business rules',exact:true}).click();
+ await page.locator('input[name="organization"]').fill('Independent Demo Company');
+ await page.getByRole('button',{name:'Save business rules'}).click();
+ await page.getByText('Business rules saved.',{exact:false}).waitFor();
+ await page.getByRole('button',{name:'Review queue',exact:false}).click();
+ assert.equal(await page.locator('#detail .badge').textContent(),'Ready for review');
+ await page.setViewportSize({width:390,height:844});
+
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'mobile horizontal overflow');
+ assert.deepEqual(errors,[]);
+ await browser.close();
+ console.log('Browser workflow passed: demo → correction → approval → export → rule invalidation; mobile layout; no JS errors.');
+})().catch(e=>{console.error(e);process.exit(1)});
