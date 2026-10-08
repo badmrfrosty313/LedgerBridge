@@ -124,6 +124,9 @@ class WorkflowTests(unittest.TestCase):
         row = next(csv.DictReader(io.StringIO(self.store.export_content(result["id"]))))
         self.assertEqual(row["vendor"], "'=HYPERLINK(123)")
         self.assertEqual(row["notes"], "'+CMD")
+        from ledgerbridge.core import csv_cell
+        for value in ("\x00=CMD", "\t=CMD", "  @SUM(1)", "\r+CMD"):
+            self.assertTrue(csv_cell(value).startswith("'"), value)
         for value in ("NaN", "Infinity", "0.001", "99999999999999999"):
             with self.assertRaises(WorkflowError):
                 money(value)

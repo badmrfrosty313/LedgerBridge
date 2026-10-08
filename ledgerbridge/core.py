@@ -102,7 +102,9 @@ def validate_rules(rules):
 def csv_cell(value):
     # Quoted CSV alone does not prevent spreadsheet formula execution.
     text = "" if value is None else str(value)
-    if text.lstrip().startswith(("=", "+", "-", "@")) or text.startswith(("\t", "\r", "\n")):
+    # Some spreadsheet readers ignore leading whitespace or NUL bytes.
+    leading = text.lstrip()
+    if leading.startswith(("=", "+", "-", "@", "\x00")) or text.startswith(("\t", "\r", "\n", "\x00")):
         return "'" + text
     return text
 

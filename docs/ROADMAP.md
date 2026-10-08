@@ -6,6 +6,8 @@ Local workflow: text/CSV import, deterministic extraction, validation, review, a
 
 Deployment hardening: explicit runtime modes, user accounts and role checks, server-controlled audit identities, bounded sessions, CSRF tokens, authenticated local tests, a WSGI production path behind TLS, schema version checks, and verified SQLite backups.
 
+Closed pilot kit: synthetic CSV ground truth, exception and reconciliation acceptance runner, manual walkthrough and scorecard, plus a scoped security review with remaining release gates.
+
 ## Next product capabilities
 
 - Local OCR for images/PDFs and Excel import, each tested against bounded inputs and a labeled fixture corpus.

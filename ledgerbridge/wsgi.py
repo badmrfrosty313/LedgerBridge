@@ -17,7 +17,9 @@ def application_for(store, auth, origin, port=8765):
         handler.path = environ.get("PATH_INFO", "/") + ("?" + environ["QUERY_STRING"] if environ.get("QUERY_STRING") else "")
         handler.headers = Message()
         for key, value in environ.items():
-            if key.startswith("HTTP_"):
+            # WSGI provides these as dedicated values. Never allow an HTTP_
+            # alias to disagree with the bytes we actually read below.
+            if key.startswith("HTTP_") and key not in ("HTTP_CONTENT_TYPE", "HTTP_CONTENT_LENGTH"):
                 handler.headers[key[5:].replace("_", "-")] = value
         handler.headers["Content-Type"] = environ.get("CONTENT_TYPE", "")
         handler.headers["Content-Length"] = environ.get("CONTENT_LENGTH", "")

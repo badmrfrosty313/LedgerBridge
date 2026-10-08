@@ -18,11 +18,12 @@ The demo uses its own `data/ledgerbridge-demo.sqlite3` and cannot be pointed at 
 Create an admin with an interactive password prompt:
 
 ```powershell
-python -m ledgerbridge.admin add-user admin --role admin
+python -m ledgerbridge.admin --db data/ledgerbridge-local.sqlite3 add-user admin --role admin
+python -m ledgerbridge.admin --db data/ledgerbridge-local.sqlite3 add-user second-reviewer --role reviewer
 python -m ledgerbridge.server --local-auth
 ```
 
-Open http://127.0.0.1:8765 and sign in. Passwords stay out of shell history. `--local-auth` is for testing over loopback HTTP; production needs an HTTPS reverse proxy. Separate databases can be selected with `--db PATH` for each mode.
+Open http://127.0.0.1:8765 and sign in. Passwords stay out of shell history. `--local-auth` uses a separate local database by default and enforces another person's approval; it is for testing over loopback HTTP. Production needs an HTTPS reverse proxy. A separate database can be selected with `--db PATH`.
 
 ## Production deployment
 
@@ -56,5 +57,7 @@ python -m unittest discover -s tests -v
 ```
 
 GitHub Actions runs Python tests on Windows and Linux, plus a browser workflow that covers authenticated login, import, review, export, demo ERP delivery/retry, rule changes, and mobile-width layout.
+
+Run the [closed pilot kit](pilot/README.md) with `python -m pilot.run` to check a synthetic exception queue, two-person approval, export totals, and restore. The [security review](docs/SECURITY_REVIEW.md) records controls tested and remaining release gates.
 
 The [API reference](docs/API.md) describes the endpoints and permissions. [ROADMAP.md](docs/ROADMAP.md) tracks PDF/image OCR, Excel import, AI/MCP features, and real accounting connectors.

@@ -1,0 +1,16 @@
+{
+  "issue_codes_by_row": [
+    [], [], ["invalid_account_code"], ["missing_account_code"],
+    ["approval_limit"], ["reconciliation"], ["duplicate"], ["duplicate"],
+    [], ["nonpositive_total"], ["missing_vendor"]
+  ],
+  "reject_rows": [4, 7, 9],
+  "corrections": {
+    "2": {"account_code": "5300"},
+    "3": {"account_code": "5100"},
+    "5": {"total_cents": 10700},
+    "10": {"vendor": "Maple Design"}
+  },
+  "expected_export_count": 8,
+  "expected_export_total_cents": 63800
+}

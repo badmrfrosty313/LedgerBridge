@@ -76,10 +76,25 @@ class SecurityTests(unittest.TestCase):
         logout = request(self.app, "POST", "/api/logout", {}, cookie=viewer_cookie, csrf=viewer_csrf)
         self.assertEqual(logout["status"], 200)
         self.assertEqual(request(self.app, "GET", "/api/documents", cookie=viewer_cookie)["status"], 401)
+        actions = [event["action"] for event in self.store.events()]
+        self.assertIn("login_succeeded", actions)
+        self.assertIn("logout", actions)
+
+    def test_wsgi_uses_canonical_body_headers(self):
+        payload = json.dumps({"username": "admin", "password": "ThisIsAnExamplePasswordForTests2026!"}).encode()
+        env = {"REQUEST_METHOD": "POST", "PATH_INFO": "/api/login", "QUERY_STRING": "",
+               "wsgi.input": io.BytesIO(payload), "CONTENT_LENGTH": str(len(payload)),
+               "CONTENT_TYPE": "application/json", "HTTP_HOST": "ledger.example",
+               "HTTP_ORIGIN": "https://ledger.example", "HTTP_CONTENT_LENGTH": "0",
+               "HTTP_CONTENT_TYPE": "text/plain"}
+        result = {}
+        result["body"] = b"".join(self.app(env, lambda status, headers: result.update(status=int(status.split()[0]))))
+        self.assertEqual(result["status"], 200)
 
     def test_login_lockout_password_reset_and_session_revocation(self):
         for _ in range(5):
             self.assertEqual(request(self.app, "POST", "/api/login", {"username": "viewer", "password": "bad"})["status"], 401)
+        self.assertEqual(len([event for event in self.store.events() if event["action"] == "login_failed"]), 5)
         self.assertEqual(request(self.app, "POST", "/api/login", {"username": "viewer", "password": "AnotherExamplePasswordForTests2026!"})["status"], 401)
         self.auth.change_password("viewer", "ResetPasswordForTests2026!")
         cookie, _ = self.login("viewer", "ResetPasswordForTests2026!")

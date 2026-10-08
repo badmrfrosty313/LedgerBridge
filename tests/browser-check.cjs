@@ -5,6 +5,13 @@ const assert = require('node:assert/strict');
  const page = await browser.newPage({viewport:{width:1440,height:1100}});
  const errors = [];
  page.on('pageerror', e => errors.push(e.message));
+ async function switchUser(username, password) {
+  await page.getByRole('button',{name:'Sign out',exact:true}).click();
+  await page.locator('input[name="username"]').fill(username);
+  await page.locator('input[name="password"]').fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByText(`${username} · ${username === 'tester' ? 'admin' : 'reviewer'}`).waitFor();
+ }
  await page.goto('http://127.0.0.1:8765');
  await page.locator('input[name="username"]').fill('tester');
  await page.locator('input[name="password"]').fill('TestOnlyPassword2026!');
@@ -18,7 +25,12 @@ const assert = require('node:assert/strict');
  await page.getByRole('button', {name:'Save corrections'}).click();
  await page.getByText('Corrections saved.', {exact:false}).waitFor();
  await page.getByRole('button', {name:'Approve record',exact:true}).click();
+ await page.getByText('A different reviewer must approve', {exact:false}).waitFor();
+ await switchUser('approver', 'TestOnlyApproverPassword2026!');
+ await page.locator('.doc-row').filter({hasText:'TEST SOFTWARE VENDOR LLC'}).click();
+ await page.getByRole('button', {name:'Approve record',exact:true}).click();
  await page.getByText('Record approved.', {exact:false}).waitFor();
+ await switchUser('tester', 'TestOnlyPassword2026!');
 
  await page.getByRole('button', {name:'Export history',exact:true}).click();
  await page.getByRole('button', {name:'Create approved CSV'}).click();
@@ -39,8 +51,11 @@ const assert = require('node:assert/strict');
  await page.locator('input[name="department"]').fill('Operations');
  await page.getByRole('button', {name:'Save corrections'}).click();
  await page.getByText('Corrections saved.', {exact:false}).waitFor();
+ await switchUser('approver', 'TestOnlyApproverPassword2026!');
+ await page.locator('.doc-row').filter({hasText:'TEST GLASS REPAIR LLC'}).click();
  await page.getByRole('button', {name:'Approve record',exact:true}).click();
  await page.getByText('Record approved.', {exact:false}).waitFor();
+ await switchUser('tester', 'TestOnlyPassword2026!');
  await page.getByRole('button',{name:'Business rules',exact:true}).click();
  await page.locator('input[name="organization"]').fill('Independent Demo Company');
  await page.getByRole('button',{name:'Save business rules'}).click();

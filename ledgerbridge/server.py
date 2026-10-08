@@ -179,7 +179,7 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/(approve|reject|reopen)", path)
                 if match:
                     self.require_role("reviewer")
-                    return self.respond(store.transition(match[1], match[2], body.get("revision"), actor, body.get("reason", ""), independent=bool(auth and not demo_mode)))
+                    return self.respond(store.transition(match[1], match[2], body.get("revision"), actor, body.get("reason", ""), independent=bool(auth)))
             if self.command == "PATCH":
                 body = self.body()
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})", path)
@@ -230,6 +230,8 @@ def main():
         if args.db != "data/ledgerbridge.sqlite3":
             parser.error("Local demo uses a separate fixed database; --db is unavailable in --local-demo mode")
         args.db = "data/ledgerbridge-demo.sqlite3"
+    elif args.local_auth and args.db == "data/ledgerbridge.sqlite3":
+        args.db = "data/ledgerbridge-local.sqlite3"
     store = Store(args.db)
     auth = None if args.local_demo else Auth(store)
     if auth and not auth.has_users():

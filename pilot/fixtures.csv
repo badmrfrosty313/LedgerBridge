@@ -1,0 +1,12 @@
+vendor,document_number,date,subtotal,tax,total,account_code,department,notes
+Northwind Office Supply,NW-101,2026-09-01,100.00,7.00,107.00,5100,Operations,Office supplies
+Harbor Maintenance,HM-220,2026-09-02,250.00,0.00,250.00,5200,Administration,Service call
+Cedar Software,CS-303,2026-09-03,40.00,0.00,40.00,9999,Technology,Wrong account code
+Pine Courier,PC-404,2026-09-04,24.00,0.00,24.00,,Operations,Account needs assignment
+Summit Equipment,SE-505,2026-09-05,12000.00,0.00,12000.00,5300,Operations,Exceeds default approval limit
+Lake Printing,LP-606,2026-09-06,100.00,7.00,110.00,5100,Administration,Total does not reconcile
+River Cleaning,RC-707,2026-09-07,75.00,0.00,75.00,5400,Operations,Original
+River Cleaning,RC-707,2026-09-07,75.00,0.00,75.00,5400,Operations,Second copy to reject
+=HYPERLINK(123),FX-808,2026-09-08,20.00,0.00,20.00,5100,Technology,Synthetic formula payload
+Grove Refund,GR-909,2026-09-09,-10.00,0.00,-10.00,5100,Operations,Credit needs separate workflow
+,MV-010,2026-09-10,15.00,0.00,15.00,5100,Administration,Payee missing

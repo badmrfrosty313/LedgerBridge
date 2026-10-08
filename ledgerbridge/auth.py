@@ -84,6 +84,7 @@ class Auth:
             if row:
                 with self.store.connect(write=True) as db:
                     db.execute("UPDATE users SET failed=failed+1, locked_until=CASE WHEN failed+1>=5 THEN ? ELSE 0 END WHERE username=?", (int(time.time()) + LOCK_SECONDS, username))
+                    self.store.audit(db, None, "login_failed", username, {"account_locked": db.execute("SELECT locked_until FROM users WHERE username=?", (username,)).fetchone()[0] > int(time.time())})
             raise WorkflowError("Invalid credentials.", 401)
         with self.store.connect(write=True) as db:
             token = secrets.token_urlsafe(48)
@@ -91,6 +92,7 @@ class Auth:
             db.execute("UPDATE users SET failed=0, locked_until=0 WHERE username=?", (username,))
             db.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
             db.execute("INSERT INTO sessions VALUES (?,?,?,?)", (hashlib.sha256(token.encode()).hexdigest(), username, csrf, int(time.time()) + SESSION_SECONDS))
+            self.store.audit(db, None, "login_succeeded", username, {})
         return token
 
     def identity(self, token: str | None) -> Identity | None:
@@ -105,7 +107,10 @@ class Auth:
     def logout(self, token: str | None):
         if token:
             with self.store.connect(write=True) as db:
+                row = db.execute("SELECT username FROM sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),)).fetchone()
                 db.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
+                if row:
+                    self.store.audit(db, None, "logout", row["username"], {})
 
     def change_password(self, username: str, password: str):
         if not isinstance(password, str) or not 15 <= len(password) <= 1024 or len(password.encode("utf-8")) > 4096:
