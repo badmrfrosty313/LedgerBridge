@@ -8,9 +8,11 @@ Document text and CSV import; configurable validation; SQLite persistence; excep
 
 Reuse and evaluate the earlier local OCR engine against generated invoice images and PDFs. Add bounded page/image processing, OCR confidence notes, native PDF text extraction, and Excel import. Keep original documents out of Git. Preserve source provenance and show confidence as an observation, not a promise of accuracy.
 
-## Next: legacy bridge demonstration
+## Delivered: legacy bridge demonstration
 
-Build a fake ERP with a separate data store and a documented import API. Add field mapping, a connector contract, dry-run previews, reconciliation receipts, retry/idempotency behavior, and error recovery. Demonstrate the same approved records flowing to different configured target formats. MIP-specific support remains an optional adapter requiring a verified target schema.
+A fake ERP with a separate data store accepts approved export batches through a local HTTP API. The connector checks receipt IDs, record counts, and payload hashes; retries reuse the batch ID without double posting. Tests cover target rollback, conflicting IDs, mismatched receipts, and recovery after a lost local delivery record.
+
+Next additions: configurable target field mapping, connector contracts, dry-run previews, multiple target formats, and richer error recovery. MIP-specific support remains an optional adapter requiring a verified target schema.
 
 ## Next: AI operations layer
 

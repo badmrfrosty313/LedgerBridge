@@ -35,6 +35,7 @@ jobs:
       - name: Verify browser workflow
         run: |
           python -m ledgerbridge.server --db /tmp/ledgerbridge-browser.sqlite3 > /tmp/ledgerbridge-server.log 2>&1 &
+          python -m ledgerbridge.mock_erp --db /tmp/ledgerbridge-demo-erp.sqlite3 > /tmp/ledgerbridge-erp.log 2>&1 &
           trap 'cat /tmp/ledgerbridge-server.log' EXIT
           python -c "import time, urllib.request; time.sleep(1); urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
           npm run test:browser

@@ -42,6 +42,18 @@ The telecom line-detail example has no date; it deliberately requires a reviewer
 
 Exact reimports open the existing record instead of creating another. Potential duplicates use vendor + document number, or vendor + date + total when both documents have no number. This is a heuristic: reviewers decide which copy to reject.
 
+## Try the separate demo ERP
+
+In a second terminal in the same repository, run:
+
+```powershell
+python -m ledgerbridge.mock_erp
+```
+
+In **Export history**, click **Send to demo ERP** beside a saved export. A separate database receives the batch and returns a reconciled receipt. Click **Verify / retry demo ERP** to confirm the same receipt without posting duplicate records. Inspect the target ledger at http://127.0.0.1:8766/api/ledger.
+
+The connector validates the target's batch ID, record count, and payload hash before recording successful delivery. If delivery succeeded but the local receipt was lost, retrying recovers the target receipt. This is a simulated target API, not MIP or another real accounting system. The target port can be changed using matching `--port` (mock ERP) and `--demo-erp-port` (LedgerBridge) options.
+
 ## CSV import format
 
 Required headers: `vendor,date,total`.

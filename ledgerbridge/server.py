@@ -15,7 +15,7 @@ STATIC = ROOT / "static"
 LOG = logging.getLogger("ledgerbridge")
 
 
-def handler_for(store):
+def handler_for(store, bridge=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             LOG.info(fmt, *args)
@@ -81,6 +81,10 @@ def handler_for(store):
                     return self.respond({"events": store.events()})
                 if path == "/api/exports":
                     return self.respond({"exports": store.exports()})
+                if path == "/api/bridge/status" and bridge:
+                    return self.respond(bridge.status())
+                if path == "/api/bridge/deliveries" and bridge:
+                    return self.respond({"deliveries": bridge.deliveries()})
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})", path)
                 if match:
                     return self.respond(store.detail(match[1]))
@@ -102,6 +106,9 @@ def handler_for(store):
                     return self.respond({"records": result}, 201)
                 if path == "/api/exports":
                     return self.respond(store.export(actor), 201)
+                match = re.fullmatch(r"/api/exports/([a-f0-9]{32})/send-demo", path)
+                if match and bridge:
+                    return self.respond(bridge.send(match[1], actor))
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/(approve|reject|reopen)", path)
                 if match:
                     return self.respond(store.transition(match[1], match[2], body.get("revision"), actor, body.get("reason", "")))
@@ -136,9 +143,12 @@ def main():
     parser = argparse.ArgumentParser(description="Run LedgerBridge locally")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--db", default="data/ledgerbridge.sqlite3")
+    parser.add_argument("--demo-erp-port", type=int, default=8766)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(Store(args.db)))
+    from .bridge import DemoBridge
+    store = Store(args.db)
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(store, DemoBridge(store, args.demo_erp_port)))
     server.daemon_threads = True
     print(f"LedgerBridge is running at http://127.0.0.1:{server.server_port}", flush=True)
     try:

@@ -144,8 +144,13 @@ async function showView(view) {
   document.querySelectorAll(".nav").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#view-name").textContent = labels[view];
   if (view === "exports") {
-    const result = await api("/api/exports");
-    $("#export-list").innerHTML = result.exports.length ? result.exports.map((item) => `<div class="export-row"><div><strong>Export ${item.id.slice(0, 8)}</strong><small>${escapeHtml(displayDate(item.created_at))} · ${escapeHtml(item.actor)}</small></div><a class="download" href="/api/exports/${item.id}/download">Download CSV ↗</a></div>`).join("") : '<p>No exports yet. Approve records in the review queue, then create a CSV.</p>';
+    const [result, deliveryResult] = await Promise.all([api("/api/exports"), api("/api/bridge/deliveries")]);
+    const deliveries = new Map(deliveryResult.deliveries.map((item) => [item.export_id, item.receipt]));
+    $("#export-list").innerHTML = '<p>Optional demo connector: start <code>python -m ledgerbridge.mock_erp</code> in a second terminal, then send an export to its separate ledger. Retrying the same batch does not post twice.</p>' + (result.exports.length ? result.exports.map((item) => `<div class="export-row"><div><strong>Export ${item.id.slice(0, 8)}</strong><small>${escapeHtml(displayDate(item.created_at))} · ${escapeHtml(item.actor)}</small>${deliveries.has(item.id) ? `<small>Demo ERP receipt ${deliveries.get(item.id).receipt_id.slice(0, 8)} · ${deliveries.get(item.id).record_count} records</small>` : ''}</div><div class="export-actions"><a class="download" href="/api/exports/${item.id}/download">Download CSV ↗</a><button class="secondary" data-send-demo="${item.id}">${deliveries.has(item.id) ? 'Verify / retry demo ERP' : 'Send to demo ERP'}</button></div></div>`).join("") : '<p>No exports yet. Approve records in the review queue, then create a CSV.</p>');
+    $("#export-list").querySelectorAll('[data-send-demo]').forEach((button) => button.addEventListener('click', () => run(async () => {
+      const receipt = await api(`/api/exports/${button.dataset.sendDemo}/send-demo`, 'POST', {});
+      await showView('exports'); notify(`${receipt.record_count} records reconciled with demo ERP. ${receipt.replayed ? 'Existing batch verified; no duplicate posting.' : 'New batch posted.'}`);
+    })));
   }
   if (view === "audit") $("#audit-list").innerHTML = eventsHtml((await api("/api/events")).events);
 }

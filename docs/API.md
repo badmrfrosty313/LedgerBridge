@@ -20,6 +20,9 @@ Base URL: `http://127.0.0.1:8765`. Mutations require `Content-Type: application/
 | POST | `/api/exports` | Export all currently approved records with `{actor}` |
 | GET | `/api/exports` | Saved export metadata |
 | GET | `/api/exports/{id}/download` | Download stored CSV snapshot |
+| GET | `/api/bridge/status` | Demo ERP connectivity |
+| GET | `/api/bridge/deliveries` | Reconciled delivery receipts |
+| POST | `/api/exports/{id}/send-demo` | Send saved export with `{actor}`; retry uses same target batch ID |
 
 Money fields in record edits are integer cents: `subtotal_cents`, `tax_cents`, `total_cents`. Other editable fields: `vendor`, `document_number`, `date`, `account_code`, `department`, `notes`. A blank optional amount is null. Dates use YYYY-MM-DD. Reject invalid dates or amounts; do not silently round.
 
