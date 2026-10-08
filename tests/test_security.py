@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from ledgerbridge.auth import Auth
@@ -117,11 +118,11 @@ class SecurityTests(unittest.TestCase):
         self.assertTrue(Auth(restored).has_users())
         with self.assertRaises(ValueError):
             backup_database(self.path, destination)
-        with sqlite3.connect(destination) as db:
+        with closing(sqlite3.connect(destination)) as db:
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
     def test_old_database_auto_backup_before_schema_upgrade(self):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db:
             db.execute("PRAGMA user_version=0")
         migrated = Store(self.path)
         self.assertEqual(migrated.rules()["revision"], 1)

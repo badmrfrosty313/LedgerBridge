@@ -4,6 +4,7 @@ import argparse
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 
@@ -22,7 +23,7 @@ def backup_database(source: str | Path, destination: str | Path) -> Path:
         os.chmod(temporary, 0o600)
         with os.fdopen(fd, "wb"):
             pass
-        with sqlite3.connect(source) as src, sqlite3.connect(temporary) as dst:
+        with closing(sqlite3.connect(source)) as src, closing(sqlite3.connect(temporary)) as dst:
             src.backup(dst)
             if dst.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Backup integrity check failed.")

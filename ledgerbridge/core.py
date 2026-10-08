@@ -8,7 +8,7 @@ import os
 import re
 import sqlite3
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -113,7 +113,7 @@ class Store:
         if not self.path.parent.exists():
             self.path.parent.mkdir(parents=True, mode=0o700)
         if self.path.exists():
-            with sqlite3.connect(self.path) as previous:
+            with closing(sqlite3.connect(self.path)) as previous:
                 version = previous.execute("PRAGMA user_version").fetchone()[0]
                 if version > 2:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
