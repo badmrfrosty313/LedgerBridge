@@ -20,7 +20,14 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
   await page.getByText(`${username} · ${username === 'tester' ? 'admin' : 'reviewer'}`).waitFor();
  }
  async function openDocument(vendor) {
-  await page.locator('.doc-row').filter({hasText:vendor}).click();
+  const row=page.locator('.doc-row').filter({hasText:vendor});
+  if(!(await row.evaluate(element=>element.classList.contains('selected')))) {
+   await row.click();
+   await page.waitForFunction(name=>{
+    const selected=document.querySelector('.doc-row.selected');
+    return selected?.querySelector('.doc-text strong')?.textContent===name && document.querySelector('#detail .detail-head h2')?.textContent===name;
+   },vendor);
+  }
   await page.locator('#detail .detail-head h2').getByText(vendor,{exact:true}).waitFor();
  }
  await page.goto(appOrigin);
@@ -65,6 +72,8 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.locator('#exception-filter').selectOption('');
  await openDocument('ORBITAL CLOUD SERVICES');
  await page.locator('input[name="account_code"]').fill('5100');
+ await page.locator('.doc-row.selected').click();
+ assert.equal(await page.locator('input[name="account_code"]').inputValue(),'5100','reselecting the active row must not discard an in-progress correction');
  await page.locator('input[name="department"]').fill('Technology');
  assert.equal(await page.locator('input[name="account_code"]').inputValue(),'5100');
  const correctionResponse=page.waitForResponse(response=>response.request().method()==='PATCH' && response.url().includes('/api/documents/'));

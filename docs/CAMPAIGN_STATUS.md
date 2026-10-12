@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`710f158` — makes browser-job service readiness wait for both local endpoints and exposes a bounded synthetic-only Playwright failure annotation for diagnosis. The current worktree validates target-account syntax at the simulated ERP boundary and tests atomic rejection; Playwright also asserts that an account-code correction is persisted in the PATCH response before approving.
+`37d7912` — validates target-account syntax at the simulated ERP boundary, tests its atomic rejection, and asserts correction persistence before approval. The current worktree prevents reselecting the active document from asynchronously rebuilding its form, a race exposed by CI's browser failure annotation.
 
 ## Issue #5 review read
 
@@ -14,14 +14,14 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 - `python -m unittest discover -s tests -q`: 75 tests passed.
 - `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
-- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.936 ms; this is a local sample, not a performance or savings claim.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 23.474 ms; this is a local sample, not a performance or savings claim.
 - `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
 - Compileall, JavaScript syntax, `pip check`, and `git diff --check`: passed. Production Waitress startup/health passed from `/tmp/ledgerbridge-prod-deps` with a temporary synthetic database.
 - Full Playwright browser workflow passed locally on both system Chromium and Playwright-pinned Chromium 151 with fresh temporary SQLite files and isolated ports. It covers XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent approval, invalid totals and duplicate destinations; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. Playwright Chromium was installed to `/tmp/ledgerbridge-playwright-browsers` because the managed home cache is not writable.
 
 ## Remote CI and remaining acceptance gates
 
-Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`), and [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618) (`8899df6`) failed the browser job while Python matrix checks passed. The public annotation from run [38298253269](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298253269) (`710f158`) identifies the assertion: the synthetic `ORBITAL CLOUD SERVICES` record still reported missing `account_code` after the browser's correction save. The 75-test local suite, both pilots, production Waitress smoke test, and full Playwright journey pass locally on Playwright-pinned Chromium 151. New assertions inspect the PATCH response so the next CI run distinguishes a failed form payload from a stale UI refresh. No remote green result is claimed; continue investigating until the final run is green.
+Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924), [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618), [38298253269](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298253269), and [38298593182](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298593182) all failed browser CI while Python matrix checks passed. Run `38298593182`'s public failure annotation revealed a row-selection race: clicking the already-selected `ORBITAL CLOUD SERVICES` row caused an async detail rerender, clearing the field before save. The worktree now avoids rebuilding the selected row and the full Playwright journey passes locally on pinned Chromium 151. This fix awaits remote CI; no remote green result is claimed.
 
 ### Milestone state
 
