@@ -139,6 +139,7 @@ class Store:
                     actor TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination));
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
             if db.execute("PRAGMA user_version").fetchone()[0] == 0:
@@ -311,6 +312,38 @@ class Store:
             db.execute("UPDATE documents SET fields=?, status='draft', revision=revision+1, updated_at=? WHERE id=?", (json.dumps(after), now(), document_id))
             self.audit(db, document_id, "edited", actor, {"before": before, "after": after, "previous_status": row["status"]})
             self.invalidate_approvals(db)
+        return self.detail(document_id)
+
+    def allocation_preview(self, document_id, items):
+        if not isinstance(items, list) or not 1 <= len(items) <= 50:
+            raise WorkflowError("Provide between 1 and 50 allocation destinations.")
+        with self.connect() as db:
+            row = self.get(db, document_id)
+            total = json.loads(row["fields"]).get("total_cents")
+            if type(total) is not int: raise WorkflowError("Set a valid document total before allocating.", 409)
+        parsed = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("destination"), str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]): raise WorkflowError("Allocation destination is invalid.")
+            value = item.get("percent")
+            if not isinstance(value, str) or not re.fullmatch(r"\d{1,3}(?:\.\d{1,4})?", value): raise WorkflowError("Percentages must be decimal strings with at most four fractional digits.")
+            basis = int((Decimal(value) * 10000))
+            if basis > 1_000_000: raise WorkflowError("Percentages cannot exceed 100.")
+            parsed.append((item["destination"], basis))
+        if len({key for key, _ in parsed}) != len(parsed) or sum(value for _, value in parsed) != 1_000_000: raise WorkflowError("Allocations must use unique destinations and total exactly 100.0000%.")
+        absolute = abs(total); shares = [(key, absolute * basis // 1_000_000, (absolute * basis) % 1_000_000, basis) for key, basis in parsed]
+        remaining = absolute - sum(value for _, value, _, _ in shares)
+        winners = {key for key, _, _, _ in sorted(shares, key=lambda item: (-item[2], item[0]))[:remaining]}
+        return {"document_id": document_id, "source_cents": total, "allocated_cents": total, "difference_cents": 0, "items": [{"destination": key, "percent": f"{Decimal(basis)/10000:.4f}", "cents": (-value if total < 0 else value) + (-1 if total < 0 and key in winners else 1 if total >= 0 and key in winners else 0)} for key, value, _, basis in shares]}
+
+    def save_allocations(self, document_id, items, revision, actor):
+        preview = self.allocation_preview(document_id, items)
+        with self.connect(write=True) as db:
+            row = self.get(db, document_id); self.check_revision(row, revision)
+            if row["status"] == "exported": raise WorkflowError("Exported records are immutable.", 409)
+            db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
+            for item in preview["items"]: db.execute("INSERT INTO allocations VALUES (?,?,?,?,?)", (document_id,item["destination"],item["percent"],item["cents"],revision + 1))
+            db.execute("UPDATE documents SET status='draft', revision=revision+1, updated_at=? WHERE id=?", (now(), document_id))
+            self.audit(db, document_id, "allocations_saved", actor, preview)
         return self.detail(document_id)
 
     def check_revision(self, row, revision):

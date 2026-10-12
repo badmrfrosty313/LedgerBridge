@@ -202,6 +202,11 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                     records = [{"fields": row["fields"], "source_name": f"{preview['source_name']} · row {row['row']}", "raw_text": json.dumps(row["fields"], sort_keys=True), "document_type": "xlsx_row", "warnings": []} for row in preview["rows"]]
                     result = store.import_records(records, actor)
                     return self.respond({"records": result}, 201)
+                match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/allocations/(preview|confirm)", path)
+                if match:
+                    self.require_role("reviewer")
+                    if match[2] == "preview": return self.respond(store.allocation_preview(match[1], body.get("items")))
+                    return self.respond(store.save_allocations(match[1], body.get("items"), body.get("revision"), actor))
                 if path == "/api/demo" and demo_mode:
                     self.require_role("reviewer")
                     fixtures = json.loads((ROOT / "demo.json").read_text())["fixtures"]
