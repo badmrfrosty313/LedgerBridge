@@ -49,8 +49,10 @@ class MockERP:
                 except ValueError:
                     raise WorkflowError("Invalid ledger date.") from None
                 total = money(row["total"])
-                if total <= 0:
-                    raise WorkflowError("Ledger total must be positive.")
+                if total == 0:
+                    raise WorkflowError("A zero-value ledger row is not exportable.")
+                if "amount_cents" in row and (not re.fullmatch(r"-?(?:0|[1-9][0-9]*)", str(row["amount_cents"])) or int(row["amount_cents"]) != total):
+                    raise WorkflowError("Mapped decimal total and integer-cent amount do not match.")
                 try:
                     db.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?)", (row["record_id"], batch_id, row["vendor"], row["date"], total, row["currency"], row["account_code"], json.dumps(row)))
                 except sqlite3.IntegrityError:

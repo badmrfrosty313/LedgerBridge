@@ -169,6 +169,13 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(saved["status"],200)
         self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie)["status"],403)
         self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],409)
+        rules=self.store.rules()
+        enabled=rules["rules"]|{"allow_credits":True}
+        self.assertEqual(request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie)["status"],403)
+        self.assertEqual(request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=viewer_cookie,csrf=viewer_csrf)["status"],403)
+        changed=request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(changed["status"],200)
+        self.assertTrue(json.loads(changed["body"])["rules"]["allow_credits"])
 
     def test_session_expires_and_raw_token_is_never_stored(self):
         cookie, _ = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")

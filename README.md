@@ -54,6 +54,8 @@ CSV and `.xlsx` import require `vendor,date,total`; optional columns are `docume
 
 Cost allocations are integrity-checked before approval and export, and changing a source total removes stale splits and requires a new allocation review. The legacy CSV export deliberately remains one row per source document; it does **not** emit allocation-level rows. The separately confirmed generic simulated-ledger export can expand saved splits when that profile option is enabled.
 
+Negative credit totals remain rejected unless an administrator explicitly enables the backward-compatible `allow_credits` business rule. When enabled, credits still require ordinary validation, exact allocation reconciliation where configured, independent approval, immutable export, and simulated receipt; zero totals remain invalid.
+
 Data resides in `data/ledgerbridge.sqlite3` unless `--db` selects another path. It is excluded from Git. Back up using the SQLite snapshot command in the deployment guide. Changes to older unversioned databases create a snapshot before upgrading.
 
 ## Validation

@@ -23,7 +23,7 @@ Production base URL is the configured HTTPS origin. Authenticated requests use t
 | POST | `/api/documents/{id}/reject` | Reviewer+ | `{revision,reason}` |
 | POST | `/api/documents/{id}/reopen` | Reviewer+ | `{revision}` |
 | GET | `/api/rules` | Viewer+ | Rules and revision |
-| PATCH | `/api/rules` | Admin | `{rules,revision}` |
+| PATCH | `/api/rules` | Admin | `{rules,revision}`; `allow_credits` is opt-in and defaults to false for older stored settings |
 | GET | `/api/mapping-profile` | Reviewer+ | Read current generic simulated-ledger mapping profile |
 | POST | `/api/mapping/profile` | Admin | `{profile,revision}`; revision-checked mapping update |
 | GET | `/api/mapping/dry-run` | Reviewer+ | Non-persistent mapped rows, rejected rows, profile revision, source/mapped signed-cent totals, and preview hash |
@@ -42,6 +42,8 @@ Imports and exports use SQLite transactions. Exports revalidate approvals inside
 
 Excel intake accepts `.xlsx` only, with one worksheet, a 1 MB source limit, 500 rows, and the same `vendor,date,total` schema as CSV. The preview reports row-level mapping/validation failures; formulas are rejected and no record is created until a reviewer confirms a clean preview. Excel rows never bypass normal validation, review, independent approval, or audit history.
 
-The generic simulated-ledger v1 profile maps approved source account codes to invented target codes. Dry-run is read-only; confirmation rechecks both the profile revision and a digest of the current source records inside the export transaction. Optional allocation expansion emits one non-zero posting row per saved destination. The resulting CSV is an immutable export accepted only by the local simulated ERP; it is not a live accounting connector. The older default CSV remains one row per source document.
+The generic simulated-ledger v1 profile maps currently configured source account codes to invented target codes; unsupported sources and colliding target account codes are rejected. Dry-run is read-only; confirmation rechecks both the profile revision and a digest of the current source records inside the export transaction. Mapped rows carry source ID, document number, date, destination/fund, department, account, currency, decimal total, and exact `amount_cents`. The mock ERP rejects rows when the decimal total does not exactly equal those cents. Optional allocation expansion emits one non-zero posting row per saved destination. The resulting CSV is an immutable export accepted only by the local simulated ERP; it is not a live accounting connector. Formula-like untrusted text is escaped, while signed numeric totals remain unchanged. The older default CSV remains one row per source document.
+
+Negative credit totals are rejected by default, preserving the original pilot policy. An administrator may explicitly enable `allow_credits`; then negative values still pass through the same account/date/reconciliation/limit checks, allocation preview, independent approval, export, and mock receipt controls. Zero-value records remain invalid. Previously stored v0.2.0 rules without this field are read as `false`.
 
 The reconciliation endpoint is available only when the local simulated bridge is configured. It compares signed integer-cent source and mapped totals, checks the immutable CSV content hash and total, and—after delivery—compares the mock ERP's receipt hash, row count, and received cent sum. `not_sent`, unavailable target, and mismatches remain visible states; they are never silently reported as reconciled.

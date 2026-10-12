@@ -78,18 +78,29 @@ In a second terminal run `python -m ledgerbridge.mock_erp --db /tmp/ledgerbridge
 
 Use the automated workbook generator and Playwright flow for deterministic browser data: `python tests/create_synthetic_xlsx.py` and `npm run test:browser` with the authenticated app and mock ERP running. Do not copy the credentials above into a deployed environment.
 
+Negative credits are opt-in through the administrator's business-rules screen. Existing databases without the setting retain the prior default of rejecting credits; zero-value records remain invalid. The Playwright and Python suites cover a synthetic enabled-credit split and its signed-cent mock receipt.
+
 ## Reproducible synthetic benchmark
 
-Run `python -m pilot.campaign_demo`. The harness reports a measured wall-clock duration for one local execution, synthetic source/allocation/export row counts, integer-cent totals at each stage, balance difference, and whether delivery retry was replayed. It does **not** estimate human time, labor savings, operational throughput, extraction accuracy, or real customer outcomes. Timings vary by machine; the assertion that matters is a zero-cent reconciliation difference.
+Run `python -m pilot.campaign_demo`. The harness reports a measured wall-clock duration for one local execution, synthetic source/allocation/export row counts, integer-cent totals at each stage, balance difference, idempotent retry result, distinct synthetic actor count, and the audit events corresponding to workflow decisions. These actors and events are scripted; they are not observed human labor actions. The benchmark does **not** estimate human time, labor savings, operational throughput, extraction accuracy, or real customer outcomes. Timings vary by machine; the assertion that matters is a zero-cent reconciliation difference.
 
 Example observed run: one XLSX row, two allocation rows, one independent approval, two mapped/ERP rows, 10,001 cents at source/allocation/export/ERP, zero-cent difference, retry replayed. The elapsed time is printed at each run rather than treated as a performance promise.
 
 ## Accessibility and screenshots
 
 - Reviewer UI controls have explicit labels, visible keyboard focus, native buttons/selects, and polite live regions for preview, errors, and status notifications.
+- The review queue filters by status, imported source, document date, and current exception type.
 - The browser workflow exercises keyboard queue selection, row-level validation, empty search results, inert HTML-looking synthetic vendor input, 1280px desktop width, and mobile overflow.
 - These are targeted checks, not a claim of WCAG certification or a substitute for assistive-technology testing.
 - Any portfolio screenshot should use only the eight invented demo records or a freshly generated synthetic workbook. Capture preview-before-confirm, allocation cents/difference, independent approval/history, mapping dry-run, immutable export, and mock receipt. Exclude login credentials, local filesystem paths, databases, and any user data.
+
+## FAQ
+
+- Is this a live MIP or vendor connector? No. The generic mapping output and separate ERP are local simulations only.
+- Does the service use OCR or AI? No. M7 remains excluded; deterministic inputs still require human review and independent approval.
+- Are negative credits always accepted? No. They remain rejected by default. An admin can opt in; zero values still fail, and all ordinary controls still apply.
+- Does the legacy CSV include allocation splits? No. It remains one source document per row; only the separately confirmed mapped format can expand allocations.
+- Is this ready for real financial data? No such claim is made. Review deployment, privacy, audit-storage, and accounting contract risks first.
 
 ## Security and tradeoffs
 

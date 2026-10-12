@@ -11,5 +11,7 @@ class CampaignDemoTests(unittest.TestCase):
         self.assertEqual(result["export_total_cents"], 10001)
         self.assertEqual(result["simulated_erp_total_cents"], 10001)
         self.assertEqual(result["balance_difference_cents"], 0)
+        self.assertEqual(result["synthetic_workflow_decision_events"], 7)
+        self.assertEqual(result["synthetic_actor_count"], 6)
         self.assertTrue(result["delivery_retry_replayed"])
         self.assertFalse(result["human_time_or_savings_claimed"])

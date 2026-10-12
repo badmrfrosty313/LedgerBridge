@@ -30,6 +30,7 @@ DEFAULT_RULES = {
     "departments": ["Operations", "Administration", "Technology"],
     "approval_limit_cents": 1000000,
     "reconciliation_tolerance_cents": 2,
+    "allow_credits": False,
 }
 DEFAULT_MAPPING_PROFILE = {"profile_version": 1, "account_map": {code: code for code in DEFAULT_RULES["account_codes"]}, "expand_allocations": False}
 FIELDS = {"vendor", "document_number", "date", "subtotal_cents", "tax_cents", "total_cents", "account_code", "department", "notes"}
@@ -82,8 +83,13 @@ def normalize_fields(fields):
 
 
 def validate_rules(rules):
+    legacy_keys = set(DEFAULT_RULES) - {"allow_credits"}
+    if isinstance(rules, dict) and set(rules) == legacy_keys:
+        rules = rules | {"allow_credits": False}
     if not isinstance(rules, dict) or set(rules) != set(DEFAULT_RULES):
         raise WorkflowError("Rules must include exactly the documented configuration fields.")
+    if type(rules["allow_credits"]) is not bool:
+        raise WorkflowError("allow_credits must be true or false.")
     if not isinstance(rules["organization"], str) or not 1 <= len(rules["organization"].strip()) <= 120:
         raise WorkflowError("Organization name is required (maximum 120 characters).")
     if not isinstance(rules["currency"], str) or not re.fullmatch(r"[A-Z]{3}", rules["currency"]):
@@ -138,6 +144,8 @@ def normalize_mapping_profile(profile):
     mapping = profile["account_map"]
     if not isinstance(mapping, dict) or len(mapping) > 100 or any(not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", key) or not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", value) for key, value in mapping.items()):
         raise WorkflowError("Account mapping must use supported source codes and safe target codes.")
+    if len(set(mapping.values())) != len(mapping):
+        raise WorkflowError("Target ledger account codes must be unique; resolve collisions before saving.")
     return profile
 
 
@@ -223,7 +231,7 @@ class Store:
             with self.connect() as db:
                 return self.rules(db)
         row = db.execute("SELECT * FROM settings WHERE id=1").fetchone()
-        return {"rules": json.loads(row["rules"]), "revision": row["revision"]}
+        return {"rules": validate_rules(json.loads(row["rules"])), "revision": row["revision"]}
 
     def get(self, db, document_id):
         row = db.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
@@ -241,9 +249,10 @@ class Store:
             if fields.get(key) is None or fields.get(key) == "":
                 add("missing_" + key, f"Required field missing: {key.replace('_cents', '').replace('_', ' ')}.")
         if fields.get("total_cents") is not None:
-            if fields["total_cents"] <= 0:
-                add("nonpositive_total", "Total must be greater than zero. Credit notes need a separate workflow.")
-            if fields["total_cents"] > rules["approval_limit_cents"]:
+            total = fields["total_cents"]
+            if total == 0 or (total < 0 and not rules.get("allow_credits", False)):
+                add("nonpositive_total", "Zero totals are invalid and credit notes are disabled by current business rules.")
+            if abs(total) > rules["approval_limit_cents"]:
                 add("approval_limit", "Amount exceeds the configured approval limit.")
         if all(fields.get(k) is not None for k in MONEY_FIELDS):
             if abs(fields["subtotal_cents"] + fields["tax_cents"] - fields["total_cents"]) > rules["reconciliation_tolerance_cents"]:
@@ -459,6 +468,10 @@ class Store:
     def save_mapping_profile(self, profile, revision, actor):
         normalize_mapping_profile(profile)
         with self.connect(write=True) as db:
+            supported_sources=set(self.rules(db)["rules"]["account_codes"])
+            unsupported=set(profile["account_map"])-supported_sources
+            if unsupported:
+                raise WorkflowError("Mapping uses unsupported source account codes: "+", ".join(sorted(unsupported)))
             current=self.mapping_profile(db)
             if type(revision) is not int or revision!=current["revision"]: raise WorkflowError("Mapping profile changed. Refresh before saving.",409)
             db.execute("UPDATE mapping_profiles SET profile=?,revision=revision+1,actor=?,updated_at=? WHERE id=1",(json.dumps(profile,sort_keys=True),actor,now()))
@@ -486,7 +499,7 @@ class Store:
             for destination,amount in splits:
                 material=f"{doc['id']}:{destination}:{len(rows)}".encode()
                 record_id=hashlib.sha256(material).hexdigest()[:32]
-                rows.append({"record_id":record_id,"source_id":doc["id"],"vendor":fields.get("vendor") or "","date":fields.get("date") or "","total":f"{Decimal(amount)/100:.2f}","currency":rules["currency"],"account_code":account,"department":fields.get("department") or "","destination":destination,"notes":fields.get("notes") or ""})
+                rows.append({"record_id":record_id,"source_id":doc["id"],"document_number":fields.get("document_number") or "","vendor":fields.get("vendor") or "","date":fields.get("date") or "","amount_cents":amount,"total":f"{Decimal(amount)/100:.2f}","currency":rules["currency"],"account_code":account,"department":fields.get("department") or "","destination":destination,"notes":fields.get("notes") or ""})
                 mapped_total+=amount
         difference=source_total-mapped_total
         snapshot={"profile_revision":profile_record["revision"],"profile_version":profile["profile_version"],"source_ids":source_ids,"rows":rows,"rejected":rejected,"source_total_cents":source_total,"mapped_total_cents":mapped_total,"difference_cents":difference}
@@ -507,8 +520,13 @@ class Store:
             profile_actor=self.mapping_profile(db)["actor"]
             if profile_actor!="system" and profile_actor==actor:
                 raise WorkflowError("A different reviewer must confirm the mapping export than the person who last changed its profile.",409)
-            out=io.StringIO(newline=""); columns=("record_id","source_id","vendor","date","total","currency","account_code","department","destination","notes")
-            writer=csv.DictWriter(out,fieldnames=columns); writer.writeheader(); writer.writerows(current["rows"])
+            out=io.StringIO(newline=""); columns=("record_id","source_id","document_number","vendor","date","amount_cents","total","currency","account_code","department","destination","notes")
+            writer=csv.DictWriter(out,fieldnames=columns); writer.writeheader()
+            # These two fields are canonical numeric representations; escaping
+            # a negative sign would change their financial meaning. All other
+            # untrusted text is neutralized for spreadsheet consumers.
+            safe_rows=({key:(value if key in {"total","amount_cents"} else csv_cell(value)) for key,value in row.items()} for row in current["rows"])
+            writer.writerows(safe_rows)
             export_id=uuid.uuid4().hex; created=now(); content=out.getvalue()
             db.execute("INSERT INTO exports VALUES (?,?,?,?)",(export_id,content,created,actor))
             db.execute("INSERT INTO mapping_export_meta VALUES (?,?,?,?,?,?,?)",(export_id,current["profile_revision"],current["profile_version"],json.dumps(current["source_ids"]),current["source_total_cents"],current["mapped_total_cents"],hashlib.sha256(content.encode()).hexdigest()))

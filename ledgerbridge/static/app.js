@@ -75,11 +75,20 @@ function renderStats() {
 }
 function renderList() {
   const query = $("#search").value.toLowerCase(); const filter = $("#filter").value;
+  const sources=[...new Set(state.documents.map(doc=>doc.source_name).filter(Boolean))].sort();
+  const sourceSelect=$("#source-filter"); const oldSource=sourceSelect.value;
+  sourceSelect.innerHTML='<option value="">All sources</option>'+sources.map(source=>'<option value="'+escapeHtml(source)+'">'+escapeHtml(source)+'</option>').join("");
+  if(sources.includes(oldSource))sourceSelect.value=oldSource;
+  const exceptionCodes=[...new Set(state.documents.flatMap(doc=>doc.issues.map(issue=>issue.code)))].sort();
+  const exceptionSelect=$("#exception-filter"); const oldException=exceptionSelect.value;
+  exceptionSelect.innerHTML='<option value="">All exception types</option>'+exceptionCodes.map(code=>'<option value="'+escapeHtml(code)+'">'+escapeHtml(code.replaceAll("_"," "))+'</option>').join("");
+  if(exceptionCodes.includes(oldException))exceptionSelect.value=oldException;
+  const sourceFilter=sourceSelect.value; const dateFilter=$("#date-filter").value; const exceptionFilter=exceptionSelect.value;
   const docs = state.documents.filter((doc) => {
     const fields = doc.fields;
     const status = statusInfo(doc)[0];
     const allocationSearch=(doc.allocations||[]).map(item=>item.destination).join(" ");
-    return (filter === "all" || filter === status) && `${fields.vendor || ""} ${fields.document_number || ""} ${fields.account_code || ""} ${fields.department || ""} ${fields.date || ""} ${doc.source_name} ${allocationSearch}`.toLowerCase().includes(query);
+    return (filter === "all" || filter === status) && (!sourceFilter || doc.source_name===sourceFilter) && (!dateFilter || fields.date===dateFilter) && (!exceptionFilter || doc.issues.some(issue=>issue.code===exceptionFilter)) && `${fields.vendor || ""} ${fields.document_number || ""} ${fields.account_code || ""} ${fields.department || ""} ${fields.date || ""} ${doc.source_name} ${allocationSearch}`.toLowerCase().includes(query);
   });
   $("#document-list").innerHTML = docs.length ? docs.map((doc) => `<button class="doc-row ${doc.id === state.selected ? "selected" : ""}" data-id="${doc.id}"><span class="doc-icon">DOC</span><span class="doc-text"><strong>${escapeHtml(doc.fields.vendor || "Vendor needs review")}</strong><small>${escapeHtml(doc.fields.document_number || doc.document_type.replaceAll("_", " "))} · ${escapeHtml(doc.fields.date || "No date")}</small></span><span class="doc-right"><strong>${escapeHtml(formatMoney(doc.fields.total_cents))}</strong>${badge(doc)}</span></button>`).join("") : `<div class="nothing">${state.documents.length ? "No records match this filter." : "Your queue is empty. Load examples to explore."}</div>`;
   $("#document-list").querySelectorAll("[data-id]").forEach((button) => button.addEventListener("click", () => run(() => selectDocument(button.dataset.id))));
@@ -170,12 +179,14 @@ function renderRules() {
   const form = $("#rules-form"); const rules = state.rules.rules;
   form.elements.organization.value = rules.organization; form.elements.currency.value = rules.currency;
   form.elements.approval_limit.value = amountInput(rules.approval_limit_cents); form.elements.tolerance.value = rules.reconciliation_tolerance_cents;
+  form.elements.allow_credits.checked = rules.allow_credits === true;
   for (const key of ["account_codes", "departments", "required_fields"]) form.elements[key].value = rules[key].join(", ");
 }
 async function saveRules() {
   const form = $("#rules-form"); const rules = {...state.rules.rules};
   rules.organization = form.elements.organization.value.trim(); rules.currency = form.elements.currency.value.trim();
   rules.approval_limit_cents = cents(form.elements.approval_limit.value); rules.reconciliation_tolerance_cents = Number(form.elements.tolerance.value);
+  rules.allow_credits = form.elements.allow_credits.checked;
   for (const key of ["account_codes", "departments", "required_fields"]) rules[key] = form.elements[key].value.split(",").map((value) => value.trim()).filter(Boolean);
   await api("/api/rules", "PATCH", {rules, revision: state.rules.revision}); await refresh(); notify("Business rules saved. Previously approved records now require review.");
 }
@@ -246,7 +257,7 @@ $("#open-import").addEventListener("click", () => run(() => showView("imports"))
 $("#refresh").addEventListener("click", () => run(refresh));
 $("#load-demo").addEventListener("click", () => run(loadDemo));
 $("#demo-import").addEventListener("click", () => run(loadDemo));
-$("#search").addEventListener("input", renderList); $("#filter").addEventListener("change", renderList);
+$("#search").addEventListener("input", renderList); $("#filter").addEventListener("change", renderList); $("#source-filter").addEventListener("change", renderList); $("#date-filter").addEventListener("change", renderList); $("#exception-filter").addEventListener("change", renderList);
 $("#text-import").addEventListener("submit", (event) => {
   event.preventDefault(); run(async () => {
     const form = new FormData(event.target); const result = await api("/api/import/text", "POST", {text: form.get("text"), source_name: form.get("source_name")});

@@ -74,6 +74,14 @@ def run_demo():
         assert {item["account_code"] for item in ledger} == {"6100"}
         assert store.detail(document_id)["status"] == "exported"
 
+        counted_actions = ("imported", "allocations_saved", "approve", "mapping_profile_updated",
+                           "exported_mapped", "mapped_export_created", "demo_erp_delivered")
+        with store.connect() as db:
+            observed = {row["action"]: row["count"] for row in db.execute(
+                "SELECT action,COUNT(*) AS count FROM events GROUP BY action"
+            )}
+            actor_count = db.execute("SELECT COUNT(DISTINCT actor) FROM events WHERE actor LIKE 'Synthetic %'").fetchone()[0]
+        workflow_decision_events = sum(observed.get(action, 0) for action in counted_actions)
         elapsed_ms = round((perf_counter() - started) * 1000, 3)
         return {
             "label": "synthetic local benchmark; not a customer pilot or savings estimate",
@@ -82,6 +90,8 @@ def run_demo():
             "allocation_rows": 2,
             "independent_approvals": 1,
             "export_rows": exported["record_count"],
+            "synthetic_workflow_decision_events": workflow_decision_events,
+            "synthetic_actor_count": actor_count,
             "source_total_cents": dry_run["source_total_cents"],
             "allocated_total_cents": allocation["allocated_cents"],
             "export_total_cents": dry_run["mapped_total_cents"],

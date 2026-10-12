@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`53c271e` — M4 reconciliation UX, M5 trust/regression coverage, and M6 synthetic candidate evidence. A follow-up CI change adds the campaign harness to the Python matrix.
+`90c3c97` — CI runs the synthetic campaign harness in the cross-platform Python matrix. The current working checkpoint extends credit-policy compatibility, mapped export validation, dashboard filters, and browser workflow assertions; it is not pushed yet.
 
 ## Issue #5 review read
 
@@ -12,16 +12,16 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 ## Local verification at this working checkpoint
 
-- `python -m unittest discover -s tests -v`: 68 tests passed.
+- `python -m unittest discover -s tests -v`: 72 tests passed.
 - `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
-- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.952 ms; this is a local sample, not a performance or savings claim.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.778 ms; this is a local sample, not a performance or savings claim.
 - `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
 - Compileall, JavaScript syntax, and `git diff --check`: passed.
-- Full Playwright browser workflow passed locally using installed system Chromium at `/usr/bin/chromium`, fresh temporary SQLite files, and isolated ports. It covered XLSX preview/formula rejection/confirm; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation; round-trip cents; simulated ERP retry; immutable export lock; keyboard, empty state, HTML safety, desktop and mobile layout. The managed Playwright browser installer remains restricted by network policy until the saved environment draft is reviewed/published.
+- Full Playwright browser workflow passed locally using installed system Chromium at `/usr/bin/chromium`, fresh temporary SQLite files, and isolated ports. It covered XLSX preview/formula rejection/confirm; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. The managed Playwright browser installer remains restricted by network policy until the saved environment draft is reviewed/published.
 
 ## Remote CI and remaining acceptance gates
 
-Actions run [38295323262](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295323262) was queued when inspected for checkpoint `53c271e`; no green result is claimed. The prior run for `b37c208` failed its browser workflow after earlier Python jobs passed. The public page does not expose its detailed private job log here. Local replay found and fixed a hard-coded test origin and request-context cookie issue; the corrected complete local browser flow passes. The next pushed commit must be checked in GitHub Actions. Do not call M1–M6 complete while final CI is red or pending.
+Actions run [38295442894](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295442894) for `90c3c97` failed the browser workflow after the matrix run was initiated; the public page does not expose its detailed private job log here. Local replay identified the browser environment issues and the corrected complete browser flow passes. The current in-progress changes are not yet run in GitHub Actions. Do not call M1–M6 complete while final CI is red or pending.
 
 ### Milestone state
 

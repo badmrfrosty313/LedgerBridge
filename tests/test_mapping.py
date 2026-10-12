@@ -14,7 +14,7 @@ class MappingTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.store=Store(Path(self.temp.name)/"ledger.sqlite3")
-        self.document=self.store.import_csv("vendor,date,total,account_code,department,notes\nSYNTHETIC MAPPING VENDOR,2026-10-12,100.00,5100,Operations,Test posting","synthetic.csv","Importer")[0]["id"]
+        self.document=self.store.import_csv("vendor,document_number,date,total,account_code,department,notes\nSYNTHETIC MAPPING VENDOR,SYN-MAP-01,2026-10-12,100.00,5100,Operations,Test posting","synthetic.csv","Importer")[0]["id"]
 
     def tearDown(self): self.temp.cleanup()
 
@@ -52,6 +52,15 @@ class MappingTests(unittest.TestCase):
         with self.assertRaises(WorkflowError): self.store.confirm_mapping_export(dry["preview_id"],dry["profile_revision"],"Admin")
         self.assertEqual(self.store.exports(),[])
 
+    def test_mapping_rejects_target_collisions(self):
+        profile=self.store.mapping_profile()
+        collided=profile["profile"]|{"account_map":{"5100":"6100","5200":"6100"}}
+        with self.assertRaisesRegex(WorkflowError,"Target ledger account codes must be unique"):
+            self.store.save_mapping_profile(collided,profile["revision"],"Admin")
+        unsupported=profile["profile"]|{"account_map":profile["profile"]["account_map"]|{"9999":"9999"}}
+        with self.assertRaisesRegex(WorkflowError,"unsupported source account codes"):
+            self.store.save_mapping_profile(unsupported,profile["revision"],"Admin")
+
     def test_explicit_mapped_export_is_immutable_and_reconcilable(self):
         row=self.store.detail(self.document)
         self.store.save_allocations(self.document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],row["revision"],"Allocator")
@@ -68,6 +77,8 @@ class MappingTests(unittest.TestCase):
         content=self.store.export_content(exported["id"])
         rows=list(csv.DictReader(io.StringIO(content)))
         self.assertEqual([item["total"] for item in rows],["60.00","40.00"])
+        self.assertEqual([item["amount_cents"] for item in rows],["6000","4000"])
+        self.assertTrue(all(item["document_number"]=="SYN-MAP-01" for item in rows))
         self.assertTrue(all(item["source_id"]==self.document for item in rows))
         self.assertEqual(self.store.detail(self.document)["status"],"exported")
         self.assertEqual(self.store.mapping_dry_run()["rows"],[])
@@ -87,6 +98,18 @@ class MappingTests(unittest.TestCase):
         self.assertFalse(receipt["replayed"]); self.assertTrue(replay["replayed"])
         self.assertEqual(receipt["record_count"],1)
         self.assertEqual(target.ledger()[0]["total_cents"],10000)
+
+    def test_simulated_erp_rejects_mapped_decimal_and_cent_mismatch_atomically(self):
+        self.approve(); profile=self.store.mapping_profile()
+        self.store.save_mapping_profile(profile["profile"],profile["revision"],"Mapper")
+        preview=self.store.mapping_dry_run()
+        exported=self.store.confirm_mapping_export(preview["preview_id"],preview["profile_revision"],"Exporter")
+        rows=list(csv.DictReader(io.StringIO(self.store.export_content(exported["id"]))))
+        rows[0]["amount_cents"]="9999"
+        target=MockERP(Path(self.temp.name)/"mismatch-target.sqlite3")
+        with self.assertRaisesRegex(WorkflowError,"decimal total and integer-cent amount"):
+            target.accept({"batch_id":exported["id"],"records":rows})
+        self.assertEqual(target.ledger(),[])
 
     def test_concurrent_export_confirmation_is_exactly_once(self):
         self.approve(); preview=self.store.mapping_dry_run(); barrier=threading.Barrier(2); outcomes=[]
@@ -129,6 +152,37 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(row["source_mapping_difference_cents"],0)
         self.assertEqual(row["mapping_export_difference_cents"],0)
         self.assertEqual(row["export_received_difference_cents"],0)
+
+    def test_explicitly_enabled_negative_credit_reconciles_and_formula_text_is_safe(self):
+        document=self.store.import_csv('vendor,date,total,account_code,notes\n"=HYPERLINK(1)",2026-10-12,-10.01,5100,"+CMD"',"credit.csv","Credit Intake")[0]["id"]
+        row=self.store.detail(document)
+        self.assertIn("nonpositive_total",[issue["code"] for issue in row["issues"]])
+        rules=self.store.rules()
+        enabled=rules["rules"]|{"allow_credits":True}
+        self.store.update_rules(enabled,rules["revision"],"Admin")
+        row=self.store.detail(document)
+        preview=self.store.allocation_preview(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}])
+        self.assertEqual([item["cents"] for item in preview["items"]],[-601,-400])
+        saved=self.store.save_allocations(document,preview["items"],row["revision"],"Credit Allocator")
+        self.store.transition(document,"approve",saved["revision"],"Credit Approver",independent=True)
+        profile=self.store.mapping_profile()
+        configured=profile["profile"]|{"expand_allocations":True}
+        self.store.save_mapping_profile(configured,profile["revision"],"Credit Mapper")
+        dry=self.store.mapping_dry_run()
+        self.assertEqual((dry["source_total_cents"],dry["mapped_total_cents"]),(-1001,-1001))
+        exported=self.store.confirm_mapping_export(dry["preview_id"],dry["profile_revision"],"Credit Exporter")
+        content=self.store.export_content(exported["id"])
+        rows=list(csv.DictReader(io.StringIO(content)))
+        self.assertEqual([row["total"] for row in rows],["-6.01","-4.00"])
+        self.assertTrue(rows[0]["vendor"].startswith("'="))
+        self.assertEqual(rows[0]["notes"],"'+CMD")
+        target=MockERP(Path(self.temp.name)/"credit-target.sqlite3")
+        bridge=DemoBridge(self.store)
+        bridge.request=lambda path,body=None:target.accept(body) if body is not None else target.batch_summary(path.rsplit("/",1)[-1])
+        bridge.send(exported["id"],"Credit Delivery Admin")
+        reconciled=bridge.reconciliation()[0]
+        self.assertEqual(reconciled["delivery_state"],"reconciled")
+        self.assertEqual(reconciled["received_total_cents"],-1001)
 
 
 if __name__=="__main__": unittest.main()
