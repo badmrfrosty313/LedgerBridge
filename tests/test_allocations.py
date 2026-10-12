@@ -19,3 +19,13 @@ class AllocationTests(unittest.TestCase):
  def test_saved_allocations_are_read_back(self):
   doc=self.store.detail(self.doc); saved=self.store.save_allocations(self.doc,[{"destination":"Fund A","percent":"100"}],doc["revision"],"Allocator")
   self.assertEqual(saved["allocations"][0]["cents"], 1)
+ def test_total_edit_removes_allocations_and_requires_fresh_approval(self):
+  doc=self.store.detail(self.doc); self.store.save_allocations(self.doc,[{"destination":"Fund A","percent":"100"}],doc["revision"],"Allocator")
+  doc=self.store.detail(self.doc); changed=self.store.edit(self.doc,{"total_cents":2},doc["revision"],"Reviewer")
+  self.assertEqual(changed["allocations"],[])
+  self.assertTrue(any(event["action"]=="allocations_invalidated" for event in changed["events"]))
+ def test_hundred_dollar_allocation_approves_and_exports_legacy_total(self):
+  document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
+  doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
+  doc=self.store.detail(document); self.store.transition(document,"approve",doc["revision"],"Approver",independent=True)
+  exported=self.store.export("Admin"); self.assertIn("100.00",self.store.export_content(exported["id"]))
