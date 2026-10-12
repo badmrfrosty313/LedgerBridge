@@ -28,7 +28,15 @@ class ExcelPreviewTests(unittest.TestCase):
         self.assertIn("Invalid currency amount", rows[0]["errors"][0])
         self.assertIn("Formulas are not accepted", rows[1]["errors"][0])
 
+    def test_blank_required_values_are_preview_errors(self):
+        rows = preview_xlsx(workbook([["vendor", "date", "total"], ["", "", None]]), "synthetic.xlsx")
+        self.assertEqual(len(rows[0]["errors"]), 3)
+
     def test_rejects_unknown_headers_and_multiple_sheets(self):
         with self.assertRaises(WorkflowError):
             preview_xlsx(workbook([["vendor", "date", "total", "unknown"], ["Example", "2026-10-01", "1.00", "x"]]), "synthetic.xlsx")
+
+    def test_rejects_malformed_and_oversized_workbooks(self):
+        with self.assertRaises(WorkflowError): preview_xlsx(b"not a workbook", "synthetic.xlsx")
+        with self.assertRaises(WorkflowError): preview_xlsx(b"x" * 1_000_001, "synthetic.xlsx")
 

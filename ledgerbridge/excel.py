@@ -38,7 +38,7 @@ def preview_xlsx(content: bytes, source_name: str):
     try:
         archive = zipfile.ZipFile(io.BytesIO(content))
         info = archive.infolist()
-        if len(info) > 200 or sum(item.file_size for item in info) > MAX_UNCOMPRESSED or any(item.filename.startswith(("/", "\\")) or ".." in item.filename.split("/") for item in info):
+        if len(info) > 200 or sum(item.file_size for item in info) > MAX_UNCOMPRESSED or any(item.filename.startswith(("/", "\\")) or ".." in item.filename.split("/") or item.filename.startswith("xl/externalLinks/") for item in info):
             raise ValueError
         with archive:
             workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
@@ -72,6 +72,9 @@ def preview_xlsx(content: bytes, source_name: str):
                 normalize_fields(fields)
             except (ValueError, WorkflowError) as exc:
                 errors.append(str(exc))
+            for required in ("vendor", "date", "total_cents"):
+                if fields.get(required) in (None, ""):
+                    errors.append(f"Required field missing: {required.removesuffix('_cents').replace('_', ' ')}.")
             rows.append({"row": number, "fields": fields, "errors": errors})
         if not rows:
             raise WorkflowError("Excel worksheet has no data rows.")
