@@ -7,6 +7,8 @@ import logging
 import re
 import threading
 import uuid
+import time
+from collections import OrderedDict
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,7 +27,14 @@ LOGIN_SLOTS = threading.BoundedSemaphore(4)
 
 
 def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=True):
-    previews = {}
+    previews = OrderedDict(); preview_lock = threading.Lock(); preview_ttl = 600; preview_capacity = 32
+    def take_preview(token, owner):
+        if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{32}", token): raise WorkflowError("Excel preview is invalid or expired. Upload the workbook again.", 409)
+        with preview_lock:
+            for key in [key for key, value in previews.items() if value["expires"] <= time.monotonic()]: previews.pop(key, None)
+            preview = previews.pop(token, None)
+        if not preview or preview["owner"] != owner: raise WorkflowError("Excel preview is invalid or expired. Upload the workbook again.", 409)
+        return preview
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             LOG.info(fmt, *args)
@@ -161,6 +170,7 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
             if self.command == "POST":
                 body = self.body()
                 actor = self.identity.username if auth else body.get("actor", "")
+                session_owner = token if auth else actor
                 if path == "/api/import/text":
                     self.require_role("reviewer")
                     return self.respond({"records": store.import_text(body.get("text"), body.get("source_name", "Pasted document"), actor)}, 201)
@@ -178,19 +188,18 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                         raise WorkflowError("Excel upload is not valid base64.") from None
                     rows = preview_xlsx(content, body.get("source_name", "Imported.xlsx"))
                     token = uuid.uuid4().hex
-                    previews[token] = {"actor": actor, "source_name": body.get("source_name", "Imported.xlsx"), "rows": rows}
+                    with preview_lock:
+                        for key in [key for key, value in previews.items() if value["expires"] <= time.monotonic()]: previews.pop(key, None)
+                        while len(previews) >= preview_capacity: previews.popitem(last=False)
+                        previews[token] = {"owner": session_owner, "source_name": body.get("source_name", "Imported.xlsx"), "rows": rows, "expires": time.monotonic() + preview_ttl}
                     return self.respond({"preview_token": token, "rows": rows, "valid": not any(row["errors"] for row in rows)})
                 if path == "/api/import/xlsx/confirm":
                     self.require_role("reviewer")
-                    token = body.get("preview_token")
-                    preview = previews.get(token)
-                    if not preview or preview["actor"] != actor:
-                        raise WorkflowError("Excel preview has expired. Upload the workbook again.", 409)
+                    preview = take_preview(body.get("preview_token"), session_owner)
                     if any(row["errors"] for row in preview["rows"]):
                         raise WorkflowError("Fix workbook row errors and create a new preview before importing.", 409)
                     records = [{"fields": row["fields"], "source_name": f"{preview['source_name']} · row {row['row']}", "raw_text": json.dumps(row["fields"], sort_keys=True), "document_type": "xlsx_row", "warnings": []} for row in preview["rows"]]
                     result = store.import_records(records, actor)
-                    del previews[token]
                     return self.respond({"records": result}, 201)
                 if path == "/api/demo" and demo_mode:
                     self.require_role("reviewer")
