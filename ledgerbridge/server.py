@@ -152,6 +152,9 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                     return self.respond({"status": "ok", "version": __version__, "mode": "explicit-local-demo"})
                 if path == "/api/documents":
                     return self.respond({"documents": store.list_documents()})
+                if path == "/api/allocation-templates":
+                    self.require_role("reviewer")
+                    return self.respond({"templates": store.allocation_templates()})
                 if path == "/api/rules":
                     return self.respond(store.rules())
                 if path == "/api/events":
@@ -207,6 +210,17 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                     self.require_role("reviewer")
                     if match[2] == "preview": return self.respond(store.allocation_preview(match[1], body.get("items")))
                     return self.respond(store.save_allocations(match[1], body.get("items"), body.get("revision"), actor))
+                if path == "/api/allocation-templates":
+                    self.require_role("admin")
+                    return self.respond({"templates": store.save_allocation_template(body.get("name"), body.get("items"), actor, body.get("revision"))}, 201)
+                match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/allocations/template-preview", path)
+                if match:
+                    self.require_role("reviewer")
+                    name = body.get("name")
+                    if not isinstance(name, str): raise WorkflowError("Template name is required.")
+                    template = next((item for item in store.allocation_templates() if item["name"] == name), None)
+                    if not template: raise WorkflowError("Allocation template not found.", 404)
+                    return self.respond(store.allocation_preview(match[1], template["items"]))
                 if path == "/api/demo" and demo_mode:
                     self.require_role("reviewer")
                     fixtures = json.loads((ROOT / "demo.json").read_text())["fixtures"]

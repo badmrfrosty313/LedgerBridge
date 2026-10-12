@@ -109,6 +109,28 @@ def csv_cell(value):
     return text
 
 
+def normalize_allocation_items(items):
+    """Validate allocation inputs without reading or writing a document."""
+    if not isinstance(items, list) or not 1 <= len(items) <= 50:
+        raise WorkflowError("Provide between 1 and 50 allocation destinations.")
+    parsed = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("destination"), str) or item["destination"] != item["destination"].strip() or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]):
+            raise WorkflowError("Allocation destination is invalid.")
+        value = item.get("percent")
+        if not isinstance(value, str) or not re.fullmatch(r"\d{1,3}(?:\.\d{1,4})?", value):
+            raise WorkflowError("Percentages must be decimal strings with at most four fractional digits.")
+        basis = int(Decimal(value) * 10000)
+        if basis > 1_000_000:
+            raise WorkflowError("Percentages cannot exceed 100.")
+        parsed.append((item["destination"], basis))
+    if len({key for key, _ in parsed}) != len(parsed):
+        raise WorkflowError("Allocation destinations must be unique.")
+    if sum(value for _, value in parsed) != 1_000_000:
+        raise WorkflowError("Allocation percentages must total exactly 100.0000%.")
+    return parsed
+
+
 class Store:
     def __init__(self, path):
         self.path = Path(path)
@@ -139,14 +161,23 @@ class Store:
                     actor TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination));
-                CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0);
-                CREATE TABLE IF NOT EXISTS allocation_templates (name TEXT PRIMARY KEY, items TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0: db.execute("PRAGMA user_version=1"); version = 1
-            if version < 5: db.execute("PRAGMA user_version=5")
+        # Each schema transition is transactional and advances user_version only
+        # after its DDL succeeds. The statements are idempotent for interrupted or
+        # hand-restored databases and never rebuild existing financial tables.
+        migrations = {
+            2: ("CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination))",),
+            3: ("CREATE INDEX IF NOT EXISTS allocations_by_document ON allocations(document_id)",),
+            4: ("CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0)",),
+            5: ("CREATE TABLE IF NOT EXISTS allocation_templates (name TEXT PRIMARY KEY, items TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)",),
+        }
+        for target in range(version + 1, 6):
+            with self.connect(write=True) as db:
+                for statement in migrations[target]: db.execute(statement)
+                db.execute(f"PRAGMA user_version={target}")
         if os.name == "posix" and self.path.exists():
             os.chmod(self.path, 0o600)
 
@@ -340,21 +371,11 @@ class Store:
         return self.detail(document_id)
 
     def allocation_preview(self, document_id, items):
-        if not isinstance(items, list) or not 1 <= len(items) <= 50:
-            raise WorkflowError("Provide between 1 and 50 allocation destinations.")
+        parsed = normalize_allocation_items(items)
         with self.connect() as db:
             row = self.get(db, document_id)
             total = json.loads(row["fields"]).get("total_cents")
             if type(total) is not int: raise WorkflowError("Set a valid document total before allocating.", 409)
-        parsed = []
-        for item in items:
-            if not isinstance(item, dict) or not isinstance(item.get("destination"), str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]): raise WorkflowError("Allocation destination is invalid.")
-            value = item.get("percent")
-            if not isinstance(value, str) or not re.fullmatch(r"\d{1,3}(?:\.\d{1,4})?", value): raise WorkflowError("Percentages must be decimal strings with at most four fractional digits.")
-            basis = int((Decimal(value) * 10000))
-            if basis > 1_000_000: raise WorkflowError("Percentages cannot exceed 100.")
-            parsed.append((item["destination"], basis))
-        if len({key for key, _ in parsed}) != len(parsed) or sum(value for _, value in parsed) != 1_000_000: raise WorkflowError("Allocations must use unique destinations and total exactly 100.0000%.")
         absolute = abs(total); shares = [(key, absolute * basis // 1_000_000, (absolute * basis) % 1_000_000, basis) for key, basis in parsed]
         remaining = absolute - sum(value for _, value, _, _ in shares)
         winners = {key for key, _, _, _ in sorted(shares, key=lambda item: (-item[2], item[0]))[:remaining]}
@@ -378,16 +399,18 @@ class Store:
         with self.connect() as db:
             return [dict(row) | {"items": json.loads(row["items"])} for row in db.execute("SELECT * FROM allocation_templates ORDER BY name")]
 
-    def save_allocation_template(self, name, items, actor):
+    def save_allocation_template(self, name, items, actor, revision=None):
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,80}", name): raise WorkflowError("Template name is invalid.")
-        # Validate percentages independently of a document total using a synthetic cent.
-        parsed = []
-        for item in items:
-            if not isinstance(item, dict): raise WorkflowError("Template items are invalid.")
-            parsed.append(item)
+        normalize_allocation_items(items)
         with self.connect(write=True) as db:
-            db.execute("INSERT INTO allocation_templates VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET items=excluded.items,revision=allocation_templates.revision+1,actor=excluded.actor,created_at=excluded.created_at", (name, json.dumps(parsed), 1, actor, now()))
-            self.audit(db, None, "allocation_template_saved", actor, {"name": name, "items": parsed})
+            existing = db.execute("SELECT revision FROM allocation_templates WHERE name=?", (name,)).fetchone()
+            if existing and (type(revision) is not int or revision != existing["revision"]):
+                raise WorkflowError("Template changed. Refresh before updating.", 409)
+            if not existing and revision is not None:
+                raise WorkflowError("Template does not exist; create it without a revision.", 409)
+            revision = 1 if not existing else existing["revision"] + 1
+            db.execute("INSERT INTO allocation_templates VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET items=excluded.items,revision=excluded.revision,actor=excluded.actor,created_at=excluded.created_at", (name, json.dumps(items), revision, actor, now()))
+            self.audit(db, None, "allocation_template_saved", actor, {"name": name, "items": items, "revision": revision})
         return self.allocation_templates()
 
     def check_revision(self, row, revision):

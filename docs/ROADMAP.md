@@ -2,7 +2,9 @@
 
 ## Delivered
 
-Local workflow: text/CSV import, deterministic extraction, validation, review, approvals, SQLite storage, audit trail, durable CSV snapshots, and a separate fake ERP with reconciled, idempotent import receipts.
+Local workflow: text/CSV and reviewed XLSX import, deterministic extraction, validation, review, approvals, SQLite storage, audit trail, durable CSV snapshots, and a separate fake ERP with reconciled, idempotent import receipts.
+
+Allocation groundwork: deterministic percentage-to-cent previews, audited saved splits, reviewer templates, total-change invalidation, and approval/export integrity checks. The existing CSV export intentionally remains one row per source document; split allocation rows are not yet exported.
 
 Deployment hardening: explicit runtime modes, user accounts and role checks, server-controlled audit identities, bounded sessions, CSRF tokens, authenticated local tests, a WSGI production path behind TLS, schema version checks, and verified SQLite backups.
 
@@ -10,7 +12,7 @@ Closed pilot kit: synthetic CSV ground truth, exception and reconciliation accep
 
 ## Next product capabilities
 
-- Local OCR for images/PDFs and Excel import, each tested against bounded inputs and a labeled fixture corpus.
+- Local OCR for images/PDFs, tested against bounded inputs and a labeled fixture corpus.
 - Configurable ERP field mapping, a connector interface, dry-run preview, and verified third-party contracts. MIP-specific support needs a documented schema and account access.
 - Optional provider-neutral AI extraction with structured outputs, deterministic validation, reviewer approval, quality metrics, and MCP tools.
 - Organization isolation, SSO/MFA, PostgreSQL, durable external audit storage, and coordinated migrations for multi-tenant or larger deployments.
