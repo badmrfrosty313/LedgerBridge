@@ -155,6 +155,12 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 if path == "/api/allocation-templates":
                     self.require_role("reviewer")
                     return self.respond({"templates": store.allocation_templates()})
+                if path == "/api/mapping-profile":
+                    self.require_role("reviewer")
+                    return self.respond(store.mapping_profile())
+                if path == "/api/mapping/dry-run":
+                    self.require_role("reviewer")
+                    return self.respond(store.mapping_dry_run())
                 if path == "/api/rules":
                     return self.respond(store.rules())
                 if path == "/api/events":
@@ -213,6 +219,12 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 if path == "/api/allocation-templates":
                     self.require_role("admin")
                     return self.respond({"templates": store.save_allocation_template(body.get("name"), body.get("items"), actor, body.get("revision"))}, 201)
+                if path == "/api/mapping/profile":
+                    self.require_role("admin")
+                    return self.respond(store.save_mapping_profile(body.get("profile"),body.get("revision"),actor))
+                if path == "/api/mapping/exports":
+                    self.require_role("reviewer")
+                    return self.respond(store.confirm_mapping_export(body.get("preview_id"),body.get("revision"),actor),201)
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/allocations/template-preview", path)
                 if match:
                     self.require_role("reviewer")

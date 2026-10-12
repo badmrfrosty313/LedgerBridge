@@ -70,16 +70,18 @@ class AllocationTests(unittest.TestCase):
   self.assertEqual(event["actor"],"Admin")
  def test_old_versions_migrate_without_losing_documents(self):
   document=self.doc
-  for version in (1,2,3,4):
+  for version in (1,2,3,4,5):
    with self.subTest(version=version):
     with self.store.connect(write=True) as db:
      db.execute("PRAGMA user_version="+str(version))
      if version < 4: db.execute("DROP TABLE IF EXISTS allocation_templates")
      if version < 3: db.execute("DROP TABLE IF EXISTS allocation_state")
      if version < 2: db.execute("DROP TABLE IF EXISTS allocations")
+     db.execute("DROP TABLE IF EXISTS mapping_profiles")
+     db.execute("DROP TABLE IF EXISTS mapping_export_meta")
     migrated=Store(self.store.path)
     self.assertEqual(migrated.detail(document)["fields"]["total_cents"],1)
-    with migrated.connect() as db: self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],5)
+    with migrated.connect() as db: self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
  def test_concurrent_stale_allocation_confirmation_is_single_winner(self):
   revision=self.store.detail(self.doc)["revision"]
   barrier=threading.Barrier(2); outcomes=[]

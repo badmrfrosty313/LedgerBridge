@@ -1,6 +1,6 @@
 "use strict";
 const $ = (selector) => document.querySelector(selector);
-const state = {documents: [], selected: null, detail: null, rules: null, view: "documents", busy: false, session: null, allocationPreviewKey: null};
+const state = {documents: [], selected: null, detail: null, rules: null, view: "documents", busy: false, session: null, allocationPreviewKey: null, mappingProfile: null, mappingPreview: null};
 const labels = {documents: "Review queue", imports: "Import documents", exports: "Export history", rules: "Business rules", audit: "Activity log"};
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 function base64File(buffer) { const bytes = new Uint8Array(buffer), chunks = []; for (let index = 0; index < bytes.length; index += 0x8000) chunks.push(String.fromCharCode(...bytes.subarray(index, index + 0x8000))); return btoa(chunks.join("")); }
@@ -101,8 +101,8 @@ function renderDetail() {
   state.allocationPreviewKey = null;
   const invalidateAllocationPreview = () => { state.allocationPreviewKey=null; $("#allocation-save-button").disabled=true; $("#allocation-preview").textContent="Inputs changed. Preview again before saving."; };
   const renderAllocationRows = (items) => {
-    $("#allocation-rows").innerHTML=items.map((item,index)=>`<div class="form-grid allocation-row" data-index="${index}"><label>Destination ${index+1}<input class="allocation-destination" aria-label="Destination ${index+1}" maxlength="120" value="${escapeHtml(item.destination||"")}"></label><label>Percentage ${index+1}<input class="allocation-percent" aria-label="Percentage ${index+1}" inputmode="decimal" value="${escapeHtml(item.percent||"")}"><span class="allocation-row-error" aria-live="polite"></span></label><button class="secondary allocation-remove" type="button" aria-label="Remove destination ${index+1}">Remove</button></div>`).join("");
-    $("#allocation-rows").querySelectorAll("input").forEach(input=>input.addEventListener("input",()=>{invalidateAllocationPreview(); input.closest("label").querySelector(".allocation-row-error").textContent="";}));
+    $("#allocation-rows").innerHTML=items.map((item,index)=>`<div class="form-grid allocation-row" data-index="${index}"><label>Destination ${index+1}<input class="allocation-destination" aria-label="Destination ${index+1}" maxlength="120" value="${escapeHtml(item.destination||"")}"></label><label>Percentage ${index+1}<input class="allocation-percent" aria-label="Percentage ${index+1}" inputmode="decimal" value="${escapeHtml(item.percent||"")}"></label><button class="secondary allocation-remove" type="button" aria-label="Remove destination ${index+1}">Remove</button><span class="allocation-row-error" aria-live="polite"></span></div>`).join("");
+    $("#allocation-rows").querySelectorAll("input").forEach(input=>input.addEventListener("input",()=>{invalidateAllocationPreview(); input.closest(".allocation-row").querySelector(".allocation-row-error").textContent="";}));
     $("#allocation-rows").querySelectorAll(".allocation-remove").forEach(button=>button.addEventListener("click",()=>{const current=allocationItemsSafe();current.splice(Number(button.closest(".allocation-row").dataset.index),1);renderAllocationRows(current);invalidateAllocationPreview();}));
   };
   const allocationItems = () => {
@@ -194,9 +194,41 @@ async function showView(view) {
       const receipt = await api(`/api/exports/${button.dataset.sendDemo}/send-demo`, 'POST', {});
       await showView('exports'); notify(`${receipt.record_count} records reconciled with demo ERP. ${receipt.replayed ? 'Existing batch verified; no duplicate posting.' : 'New batch posted.'}`);
     })));
+    if (state.session?.role === "viewer") $("#mapping-panel").hidden=true;
+    else { $("#mapping-panel").hidden=false; $("#mapping-profile-controls").hidden=state.session?.role!=="admin"; await loadMappingProfile(); }
   }
   if (view === "audit") $("#audit-list").innerHTML = eventsHtml((await api("/api/events")).events);
 }
+async function loadMappingProfile() {
+  state.mappingProfile=await api("/api/mapping-profile");
+  $("#account-map-editor").value=Object.entries(state.mappingProfile.profile.account_map).map(([source,target])=>`${source} = ${target}`).join("\n");
+  $("#expand-allocations").value=String(state.mappingProfile.profile.expand_allocations);
+}
+async function saveMappingProfile() {
+  const account_map={};
+  for(const [index,line] of $("#account-map-editor").value.split("\n").entries()) {
+    if(!line.trim())continue;
+    const parts=line.split("=").map(value=>value.trim());
+    if(parts.length!==2 || !parts[0] || !parts[1])throw new Error(`Mapping row ${index+1} must use SOURCE = TARGET.`);
+    if(Object.hasOwn(account_map,parts[0]))throw new Error(`Source account ${parts[0]} is mapped more than once.`);
+    account_map[parts[0]]=parts[1];
+  }
+  const profile={...state.mappingProfile.profile,account_map,expand_allocations:$("#expand-allocations").value==="true"};
+  await api("/api/mapping/profile","POST",{profile,revision:state.mappingProfile.revision});
+  await loadMappingProfile(); state.mappingPreview=null; $("#mapping-preview").textContent="";
+  notify("Mapping profile saved. Re-run the dry-run before confirming an export.");
+}
+async function runMappingDryRun() {
+  const preview=await api("/api/mapping/dry-run"); state.mappingPreview=preview;
+  const rows=preview.rows.map(row=>`<li>${escapeHtml(row.vendor)} · ${escapeHtml(row.date)} · ${escapeHtml(row.total)} ${escapeHtml(row.currency)} · account ${escapeHtml(row.account_code)}${row.destination?` · ${escapeHtml(row.destination)}`:""} · source ${escapeHtml(row.source_id)}</li>`).join("");
+  const rejected=preview.rejected.map(row=>`<li>${escapeHtml(row.source_id)} — ${escapeHtml(row.reason)}</li>`).join("");
+  const canConfirm=preview.rows.length && !preview.rejected.length && preview.difference_cents===0 && state.mappingProfile?.actor!==state.session?.username;
+  const reviewerNotice=preview.rows.length && state.mappingProfile?.actor===state.session?.username?"A different reviewer must confirm this mapping export.":"";
+  $("#mapping-preview").innerHTML=`<div class="${preview.difference_cents===0 && !preview.rejected.length?"clear-box":"issue-box"}"><strong>Dry-run · profile revision ${preview.profile_revision}</strong><p>${preview.rows.length} mapped rows; source ${escapeHtml(formatMoney(preview.source_total_cents))}; mapped ${escapeHtml(formatMoney(preview.mapped_total_cents))}; difference ${escapeHtml(formatMoney(preview.difference_cents))}</p><ul>${rows||"<li>No approved records available.</li>"}</ul>${rejected?`<h3>Rejected or unmapped source records</h3><ul>${rejected}</ul>`:""}${reviewerNotice?`<p>${escapeHtml(reviewerNotice)}</p>`:""}${canConfirm?'<button class="primary" id="confirm-mapped-export" type="button">Confirm mapped export snapshot</button>':""}</div>`;
+  $("#confirm-mapped-export")?.addEventListener("click",()=>run(async()=>{const result=await api("/api/mapping/exports","POST",{preview_id:preview.preview_id,revision:preview.profile_revision});state.mappingPreview=null;await refresh();await showView("exports");notify(`${result.record_count} mapped rows exported; ${formatMoney(result.difference_cents)} difference. The immutable snapshot is ready for separate demo ERP delivery.`);}));
+}
+$("#save-mapping-profile").addEventListener("click",()=>run(saveMappingProfile));
+$("#mapping-dry-run").addEventListener("click",()=>run(runMappingDryRun));
 document.querySelectorAll(".nav").forEach((button) => button.addEventListener("click", () => run(() => showView(button.dataset.view))));
 $("#open-import").addEventListener("click", () => run(() => showView("imports")));
 $("#refresh").addEventListener("click", () => run(refresh));

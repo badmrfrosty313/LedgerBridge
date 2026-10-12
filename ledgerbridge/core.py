@@ -31,6 +31,7 @@ DEFAULT_RULES = {
     "approval_limit_cents": 1000000,
     "reconciliation_tolerance_cents": 2,
 }
+DEFAULT_MAPPING_PROFILE = {"profile_version": 1, "account_map": {code: code for code in DEFAULT_RULES["account_codes"]}, "expand_allocations": False}
 FIELDS = {"vendor", "document_number", "date", "subtotal_cents", "tax_cents", "total_cents", "account_code", "department", "notes"}
 MONEY_FIELDS = {"subtotal_cents", "tax_cents", "total_cents"}
 
@@ -139,7 +140,7 @@ class Store:
         if self.path.exists():
             with closing(sqlite3.connect(self.path)) as previous:
                 version = previous.execute("PRAGMA user_version").fetchone()[0]
-                if version > 5:
+                if version > 6:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
                 old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
                 if version == 0 and old_schema:
@@ -173,10 +174,16 @@ class Store:
             3: ("CREATE INDEX IF NOT EXISTS allocations_by_document ON allocations(document_id)",),
             4: ("CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0)",),
             5: ("CREATE TABLE IF NOT EXISTS allocation_templates (name TEXT PRIMARY KEY, items TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)",),
+            6: (
+                "CREATE TABLE IF NOT EXISTS mapping_profiles (id INTEGER PRIMARY KEY CHECK(id=1), profile TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, updated_at TEXT NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS mapping_export_meta (export_id TEXT PRIMARY KEY, profile_revision INTEGER NOT NULL, profile_version INTEGER NOT NULL, source_ids TEXT NOT NULL, source_total_cents INTEGER NOT NULL, mapped_total_cents INTEGER NOT NULL, content_hash TEXT NOT NULL)",
+            ),
         }
-        for target in range(version + 1, 6):
+        for target in range(version + 1, 7):
             with self.connect(write=True) as db:
                 for statement in migrations[target]: db.execute(statement)
+                if target == 6:
+                    db.execute("INSERT OR IGNORE INTO mapping_profiles VALUES (1,?,?,?,?)", (json.dumps(DEFAULT_MAPPING_PROFILE),1,"system",now()))
                 db.execute(f"PRAGMA user_version={target}")
         if os.name == "posix" and self.path.exists():
             os.chmod(self.path, 0o600)
@@ -412,6 +419,80 @@ class Store:
             db.execute("INSERT INTO allocation_templates VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET items=excluded.items,revision=excluded.revision,actor=excluded.actor,created_at=excluded.created_at", (name, json.dumps(items), revision, actor, now()))
             self.audit(db, None, "allocation_template_saved", actor, {"name": name, "items": items, "revision": revision})
         return self.allocation_templates()
+
+    def mapping_profile(self, db=None):
+        if db is None:
+            with self.connect() as db: return self.mapping_profile(db)
+        row=db.execute("SELECT profile,revision,actor,updated_at FROM mapping_profiles WHERE id=1").fetchone()
+        if row is None: raise WorkflowError("Mapping profile is unavailable.",500)
+        return {"profile":json.loads(row["profile"]),"revision":row["revision"],"actor":row["actor"],"updated_at":row["updated_at"]}
+
+    def save_mapping_profile(self, profile, revision, actor):
+        if not isinstance(profile,dict) or set(profile)!={"profile_version","account_map","expand_allocations"} or type(profile["profile_version"]) is not int or profile["profile_version"]!=1 or type(profile["expand_allocations"]) is not bool:
+            raise WorkflowError("Mapping profile must use the supported version and documented fields.")
+        mapping=profile["account_map"]
+        if not isinstance(mapping,dict) or len(mapping)>100 or any(not isinstance(k,str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}",k) or not isinstance(v,str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}",v) for k,v in mapping.items()):
+            raise WorkflowError("Account mapping must use supported source codes and safe target codes.")
+        with self.connect(write=True) as db:
+            current=self.mapping_profile(db)
+            if type(revision) is not int or revision!=current["revision"]: raise WorkflowError("Mapping profile changed. Refresh before saving.",409)
+            db.execute("UPDATE mapping_profiles SET profile=?,revision=revision+1,actor=?,updated_at=? WHERE id=1",(json.dumps(profile,sort_keys=True),actor,now()))
+            self.audit(db,None,"mapping_profile_updated",actor,{"before":current["profile"],"after":profile,"revision":revision+1})
+        return self.mapping_profile()
+
+    def _mapping_dry_run(self, db):
+        profile_record=self.mapping_profile(db); profile=profile_record["profile"]; rules=self.rules(db)["rules"]
+        documents=db.execute("SELECT * FROM documents WHERE status='approved' ORDER BY created_at,id").fetchall()
+        rows=[]; rejected=[]; source_total=0; mapped_total=0; source_ids=[]
+        for doc in documents:
+            fields=json.loads(doc["fields"]); problems=self.issues(db,doc,rules)
+            if problems:
+                rejected.append({"source_id":doc["id"],"reason":" ".join(issue["message"] for issue in problems)}); continue
+            account=profile["account_map"].get(fields.get("account_code"))
+            if not account:
+                rejected.append({"source_id":doc["id"],"reason":f"No target account mapping for source code {fields.get('account_code')}."}); continue
+            source_ids.append(doc["id"]); source_total+=fields["total_cents"]
+            allocations=[dict(r) for r in db.execute("SELECT destination,percent,cents FROM allocations WHERE document_id=? ORDER BY destination",(doc["id"],))]
+            if profile["expand_allocations"] and allocations:
+                splits=[(a["destination"],a["cents"]) for a in allocations if a["cents"] != 0]
+            else: splits=[("",fields["total_cents"])]
+            if not splits:
+                rejected.append({"source_id":doc["id"],"reason":"Allocation produces no non-zero posting rows."}); source_total-=fields["total_cents"]; source_ids.remove(doc["id"]); continue
+            for destination,amount in splits:
+                material=f"{doc['id']}:{destination}:{len(rows)}".encode()
+                record_id=hashlib.sha256(material).hexdigest()[:32]
+                rows.append({"record_id":record_id,"source_id":doc["id"],"vendor":fields.get("vendor") or "","date":fields.get("date") or "","total":f"{Decimal(amount)/100:.2f}","currency":rules["currency"],"account_code":account,"department":fields.get("department") or "","destination":destination,"notes":fields.get("notes") or ""})
+                mapped_total+=amount
+        difference=source_total-mapped_total
+        snapshot={"profile_revision":profile_record["revision"],"profile_version":profile["profile_version"],"source_ids":source_ids,"rows":rows,"rejected":rejected,"source_total_cents":source_total,"mapped_total_cents":mapped_total,"difference_cents":difference}
+        preview_id=hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        return snapshot|{"preview_id":preview_id}
+
+    def mapping_dry_run(self):
+        with self.connect() as db: return self._mapping_dry_run(db)
+
+    def confirm_mapping_export(self, preview_id, revision, actor):
+        if not isinstance(preview_id,str) or not re.fullmatch(r"[a-f0-9]{64}",preview_id): raise WorkflowError("Run a fresh mapping preview before confirming.",409)
+        with self.connect(write=True) as db:
+            current=self._mapping_dry_run(db)
+            if type(revision) is not int or current["profile_revision"]!=revision or current["preview_id"]!=preview_id:
+                raise WorkflowError("Mapping preview is stale. Re-run the dry-run before confirming.",409)
+            if current["rejected"]: raise WorkflowError("Resolve mapping exceptions before creating an export snapshot.",409)
+            if not current["rows"]: raise WorkflowError("No approved records are available for mapped export.",409)
+            profile_actor=self.mapping_profile(db)["actor"]
+            if profile_actor!="system" and profile_actor==actor:
+                raise WorkflowError("A different reviewer must confirm the mapping export than the person who last changed its profile.",409)
+            out=io.StringIO(newline=""); columns=("record_id","source_id","vendor","date","total","currency","account_code","department","destination","notes")
+            writer=csv.DictWriter(out,fieldnames=columns); writer.writeheader(); writer.writerows(current["rows"])
+            export_id=uuid.uuid4().hex; created=now(); content=out.getvalue()
+            db.execute("INSERT INTO exports VALUES (?,?,?,?)",(export_id,content,created,actor))
+            db.execute("INSERT INTO mapping_export_meta VALUES (?,?,?,?,?,?,?)",(export_id,current["profile_revision"],current["profile_version"],json.dumps(current["source_ids"]),current["source_total_cents"],current["mapped_total_cents"],hashlib.sha256(content.encode()).hexdigest()))
+            for source_id in current["source_ids"]:
+                row=self.get(db,source_id); fields=json.loads(row["fields"])
+                db.execute("UPDATE documents SET status='exported',export_id=?,revision=revision+1,updated_at=? WHERE id=?",(export_id,created,source_id))
+                self.audit(db,source_id,"exported_mapped",actor,{"export_id":export_id,"mapping_profile_revision":current["profile_revision"],"mapping_profile_version":current["profile_version"],"fields":fields})
+            self.audit(db,None,"mapped_export_created",actor,{"export_id":export_id,"preview_id":preview_id,"profile_revision":current["profile_revision"],"source_ids":current["source_ids"],"source_total_cents":current["source_total_cents"],"mapped_total_cents":current["mapped_total_cents"],"difference_cents":current["difference_cents"]})
+        return {"id":export_id,"record_count":len(current["rows"]),"download_url":f"/api/exports/{export_id}/download","profile_version":current["profile_version"],"source_total_cents":current["source_total_cents"],"mapped_total_cents":current["mapped_total_cents"],"difference_cents":current["difference_cents"]}
 
     def check_revision(self, row, revision):
         if type(revision) is not int or row["revision"] != revision:

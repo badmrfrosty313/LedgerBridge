@@ -13,7 +13,7 @@ Closed pilot kit: synthetic CSV ground truth, exception and reconciliation accep
 ## Next product capabilities
 
 - Local OCR for images/PDFs, tested against bounded inputs and a labeled fixture corpus.
-- Configurable ERP field mapping, a connector interface, dry-run preview, and verified third-party contracts. MIP-specific support needs a documented schema and account access.
+- Verified third-party accounting contracts and real connector implementations are not included. This campaign branch includes a generic simulated-ledger mapping profile, dry-run, immutable mapped snapshots, and local fake-ERP delivery; it is not MIP-specific support.
 - Optional provider-neutral AI extraction with structured outputs, deterministic validation, reviewer approval, quality metrics, and MCP tools.
 - Organization isolation, SSO/MFA, PostgreSQL, durable external audit storage, and coordinated migrations for multi-tenant or larger deployments.
 

@@ -154,6 +154,22 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(replay["status"],409)
         self.assertEqual(len(self.store.list_documents()),1)
 
+    def test_mapping_profile_and_dry_run_routes_enforce_roles_and_csrf(self):
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        admin_cookie,admin_csrf=self.login("admin","ThisIsAnExamplePasswordForTests2026!")
+        reviewer_cookie,reviewer_csrf=self.login("reviewer","ReviewerPasswordForTests2026!")
+        viewer_cookie,viewer_csrf=self.login("viewer","AnotherExamplePasswordForTests2026!")
+        self.assertEqual(request(self.app,"GET","/api/mapping-profile",cookie=viewer_cookie)["status"],403)
+        self.assertEqual(request(self.app,"GET","/api/mapping-profile",cookie=reviewer_cookie)["status"],200)
+        self.assertEqual(request(self.app,"GET","/api/mapping/dry-run",cookie=reviewer_cookie)["status"],200)
+        self.assertEqual(request(self.app,"GET","/api/mapping/dry-run",cookie=viewer_cookie)["status"],403)
+        profile=self.store.mapping_profile()
+        self.assertEqual(request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie)["status"],403)
+        saved=request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(saved["status"],200)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],409)
+
     def test_session_expires_and_raw_token_is_never_stored(self):
         cookie, _ = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
         token = cookie.split("=", 1)[1]
