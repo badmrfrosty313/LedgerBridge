@@ -78,7 +78,8 @@ function renderList() {
   const docs = state.documents.filter((doc) => {
     const fields = doc.fields;
     const status = statusInfo(doc)[0];
-    return (filter === "all" || filter === status) && `${fields.vendor || ""} ${fields.document_number || ""} ${doc.source_name}`.toLowerCase().includes(query);
+    const allocationSearch=(doc.allocations||[]).map(item=>item.destination).join(" ");
+    return (filter === "all" || filter === status) && `${fields.vendor || ""} ${fields.document_number || ""} ${fields.account_code || ""} ${fields.department || ""} ${fields.date || ""} ${doc.source_name} ${allocationSearch}`.toLowerCase().includes(query);
   });
   $("#document-list").innerHTML = docs.length ? docs.map((doc) => `<button class="doc-row ${doc.id === state.selected ? "selected" : ""}" data-id="${doc.id}"><span class="doc-icon">DOC</span><span class="doc-text"><strong>${escapeHtml(doc.fields.vendor || "Vendor needs review")}</strong><small>${escapeHtml(doc.fields.document_number || doc.document_type.replaceAll("_", " "))} · ${escapeHtml(doc.fields.date || "No date")}</small></span><span class="doc-right"><strong>${escapeHtml(formatMoney(doc.fields.total_cents))}</strong>${badge(doc)}</span></button>`).join("") : `<div class="nothing">${state.documents.length ? "No records match this filter." : "Your queue is empty. Load examples to explore."}</div>`;
   $("#document-list").querySelectorAll("[data-id]").forEach((button) => button.addEventListener("click", () => run(() => selectDocument(button.dataset.id))));
@@ -275,6 +276,7 @@ async function initialize() {
   });
   state.session = session;
   $('#identity').textContent = `${session.username} · ${session.role}`;
+  $('#workflow-guidance').textContent=session.role==='viewer'?'Viewer access is read-only. Exported snapshots are immutable.':'Imported, edited, or allocated records require a different reviewer for approval. Exported snapshots are immutable.';
   $('#logout').hidden = !session.csrf;
   if (!session.demo_mode) {
     $('#demo-import').hidden = true; $('#load-demo').hidden = true;
