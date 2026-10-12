@@ -32,8 +32,9 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
         if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{32}", token): raise WorkflowError("Excel preview is invalid or expired. Upload the workbook again.", 409)
         with preview_lock:
             for key in [key for key, value in previews.items() if value["expires"] <= time.monotonic()]: previews.pop(key, None)
-            preview = previews.pop(token, None)
-        if not preview or preview["owner"] != owner: raise WorkflowError("Excel preview is invalid or expired. Upload the workbook again.", 409)
+            preview = previews.get(token)
+            if not preview or preview["owner"] != owner: raise WorkflowError("Excel preview is invalid or expired. Upload the workbook again.", 409)
+            previews.pop(token)
         return preview
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):

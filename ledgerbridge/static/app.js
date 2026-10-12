@@ -184,11 +184,12 @@ $("#csv-import").addEventListener("submit", (event) => {
 });
 $("#xlsx-import").addEventListener("submit", (event) => {
   event.preventDefault(); run(async () => {
+    const target = $("#xlsx-preview"); target.hidden = true; target.textContent = "";
     const file = event.target.elements.file.files[0]; if (!file) throw new Error("Choose an Excel file.");
     if (file.size > 1000000) throw new Error("Excel limit is 1 MB.");
     const content_base64 = base64File(await file.arrayBuffer());
     const result = await api("/api/import/xlsx/preview", "POST", {content_base64, source_name: file.name});
-    const target = $("#xlsx-preview"); target.hidden = false;
+    target.hidden = false;
     target.innerHTML = `<div class="${result.valid ? 'clear-box' : 'issue-box'}"><strong>${result.valid ? `${result.rows.length} rows ready to import` : 'Workbook needs corrections'}</strong><ul>${result.rows.map(row => { const f = row.fields; return `<li>Row ${row.row}: ${escapeHtml(f.vendor || 'Missing vendor')} · ${escapeHtml(f.date || 'Missing date')} · ${escapeHtml(formatMoney(f.total_cents))} · ${escapeHtml(f.account_code || 'No account code')}${row.errors.length ? ` — ${escapeHtml(row.errors.join(' '))}` : ''}</li>`; }).join('')}</ul>${result.valid ? '<button class="primary" id="confirm-xlsx">Confirm import as draft records</button>' : '<p>These are workbook parse errors. Correct them and upload again; business-rule exceptions appear after draft import. Nothing has been imported.</p>'}</div>`;
     $("#confirm-xlsx")?.addEventListener("click", () => run(async () => { const imported = await api("/api/import/xlsx/confirm", "POST", {preview_token: result.preview_token}); await refresh(); await showView("documents"); notify(`${imported.records.filter(r => !r.existing).length} Excel rows imported as drafts. Review them before approving.`); target.hidden = true; }));
   });
