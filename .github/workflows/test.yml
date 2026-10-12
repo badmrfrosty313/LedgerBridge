@@ -68,7 +68,19 @@ jobs:
           if pending:
               raise SystemExit(f"Test services did not become ready: {sorted(pending)}")
           PY
-          npm run test:browser
+          if npm run test:browser > /tmp/ledgerbridge-browser-test.log 2>&1; then
+            cat /tmp/ledgerbridge-browser-test.log
+          else
+            cat /tmp/ledgerbridge-browser-test.log
+            python - <<'PY'
+          from pathlib import Path
+
+          output = Path("/tmp/ledgerbridge-browser-test.log").read_text(errors="replace")[-4000:]
+          escaped = output.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Browser test output::{escaped}")
+          PY
+            exit 1
+          fi
       - name: Verify production Waitress startup
         run: |
           python -c "from ledgerbridge.auth import Auth; from ledgerbridge.core import Store; Auth(Store('/tmp/ledgerbridge-production.sqlite3')).add_user('admin','TestOnlyPassword2026!','admin')"

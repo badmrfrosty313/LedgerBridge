@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`106715d` — adds duplicate-destination inline browser coverage, an explicit independent-approval readiness assertion, and a longer timeout for slow CI transitions. The current worktree makes browser-job service readiness wait for both local endpoints instead of sleeping for one second.
+`8899df6` — makes browser-job service readiness wait for both local health endpoints instead of sleeping for one second. The current worktree bounds failed Playwright output into a synthetic-only GitHub check annotation to diagnose private raw logs.
 
 ## Issue #5 review read
 
@@ -21,7 +21,7 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 ## Remote CI and remaining acceptance gates
 
-Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`) and [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`) both failed the browser job; Python matrix checks passed. The public job summary exposes only the step exit code; API access to logs is forbidden. The exact Playwright-pinned Chromium 151 flow passes locally, so the newer browser-only checkpoint extends timeout and adds precise validation/readiness diagnostics. Run [38297874288](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297874288) (`106715d`) was queued when checked. A further workflow change is in progress to wait for both app and ERP health endpoints before starting Playwright. No remote green result is claimed; continue investigating until the final run is green.
+Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`), and [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618) (`8899df6`) all failed the browser job; Python matrix checks passed. The third failure happened in three seconds after the browser step began, despite the service-readiness guard. The public job summary exposes only the step exit code and raw logs are permission-blocked. The exact Playwright-pinned Chromium 151 flow passes locally. The next workflow change surfaces only the last 4 KB of synthetic browser failure output as a check annotation so the actual CI assertion can be diagnosed. No remote green result is claimed; continue investigating until the final run is green.
 
 ### Milestone state
 
