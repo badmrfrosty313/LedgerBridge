@@ -161,6 +161,9 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 if path == "/api/mapping/dry-run":
                     self.require_role("reviewer")
                     return self.respond(store.mapping_dry_run())
+                if path == "/api/reconciliation" and bridge:
+                    self.require_role("reviewer")
+                    return self.respond({"reconciliations": bridge.reconciliation()})
                 if path == "/api/rules":
                     return self.respond(store.rules())
                 if path == "/api/events":

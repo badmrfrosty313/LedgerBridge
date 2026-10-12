@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import io
-import json
+import posixpath
+import xml.etree.ElementTree as ET
 import zipfile
 from datetime import date, datetime
 
@@ -36,11 +37,21 @@ def preview_xlsx(content: bytes, source_name: str):
     if not isinstance(source_name, str) or not source_name.lower().endswith(".xlsx") or len(source_name) > 200:
         raise WorkflowError("Choose an .xlsx workbook with a safe file name.")
     try:
-        archive = zipfile.ZipFile(io.BytesIO(content))
-        info = archive.infolist()
-        if len(info) > 200 or sum(item.file_size for item in info) > MAX_UNCOMPRESSED or any(item.filename.startswith(("/", "\\")) or ".." in item.filename.split("/") or item.filename.startswith("xl/externalLinks/") for item in info):
-            raise ValueError
-        with archive:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            info = archive.infolist()
+            names = [item.filename for item in info]
+            normalized_names = [name.replace("\\", "/") for name in names]
+            if len(info) > 200 or len(names) != len(set(names)) or len(normalized_names) != len(set(normalized_names)) or sum(item.file_size for item in info) > MAX_UNCOMPRESSED:
+                raise ValueError
+            for item in info:
+                normalized = item.filename.replace("\\", "/")
+                first = normalized.split("/", 1)[0]
+                if normalized.startswith("/") or ".." in normalized.split("/") or (":" in first) or posixpath.normpath(normalized).startswith("../") or normalized.lower().startswith("xl/externallinks/"):
+                    raise ValueError
+                if normalized.lower().endswith(".rels"):
+                    relationships = ET.fromstring(archive.read(item))
+                    if any(value.lower() == "external" for element in relationships.iter() for key, value in element.attrib.items() if key.rsplit("}", 1)[-1].lower() == "targetmode"):
+                        raise ValueError
             workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
     except Exception:
         raise WorkflowError("Excel workbook is invalid, unsafe, or exceeds intake limits.") from None

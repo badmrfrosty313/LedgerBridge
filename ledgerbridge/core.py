@@ -132,6 +132,15 @@ def normalize_allocation_items(items):
     return parsed
 
 
+def normalize_mapping_profile(profile):
+    if not isinstance(profile, dict) or set(profile) != {"profile_version", "account_map", "expand_allocations"} or type(profile["profile_version"]) is not int or profile["profile_version"] != 1 or type(profile["expand_allocations"]) is not bool:
+        raise WorkflowError("Mapping profile must use the supported version and documented fields.")
+    mapping = profile["account_map"]
+    if not isinstance(mapping, dict) or len(mapping) > 100 or any(not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", key) or not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", value) for key, value in mapping.items()):
+        raise WorkflowError("Account mapping must use supported source codes and safe target codes.")
+    return profile
+
+
 class Store:
     def __init__(self, path):
         self.path = Path(path)
@@ -248,14 +257,16 @@ class Store:
         if pending and pending["review_required"]:
             add("allocation_review_required", "The document total changed after allocation. Save a newly reviewed allocation before approval.")
         if allocations:
-            allocated = sum(item["cents"] for item in allocations)
-            if allocated != fields.get("total_cents"):
-                add("allocation_stale", "Saved allocations do not reconcile to the current document total. Preview and save them again.")
-            if any(not item["destination"] or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]) for item in allocations):
-                add("allocation_destination", "Saved allocation has an invalid destination.")
             try:
-                expected = self.allocation_preview(row["id"], [{"destination": item["destination"], "percent": item["percent"]} for item in allocations])
-                if sorted((item["destination"], item["cents"]) for item in expected["items"]) != sorted((item["destination"], item["cents"]) for item in allocations):
+                if any(type(item["cents"]) is not int for item in allocations):
+                    raise WorkflowError("Saved allocation cents must be integer minor units.")
+                parsed = normalize_allocation_items([{"destination": item["destination"], "percent": item["percent"]} for item in allocations])
+                if sum(item["cents"] for item in allocations) != fields.get("total_cents"):
+                    add("allocation_stale", "Saved allocations do not reconcile to the current document total. Preview and save them again.")
+                expected = self._allocation_preview_for_total(fields.get("total_cents"), allocations)
+                actual = sorted((item["destination"], Decimal(item["percent"]), item["cents"]) for item in allocations)
+                calculated = sorted((item["destination"], Decimal(item["percent"]), item["cents"]) for item in expected["items"])
+                if len(parsed) != len(allocations) or actual != calculated:
                     add("allocation_corrupt", "Saved allocations differ from the deterministic percentage calculation.")
             except WorkflowError as exc:
                 add("allocation_invalid", str(exc))
@@ -377,18 +388,22 @@ class Store:
             self.invalidate_approvals(db)
         return self.detail(document_id)
 
-    def allocation_preview(self, document_id, items):
+    @staticmethod
+    def _allocation_preview_for_total(total, items):
+        if type(total) is not int: raise WorkflowError("Set a valid document total before allocating.", 409)
         parsed = normalize_allocation_items(items)
-        with self.connect() as db:
-            row = self.get(db, document_id)
-            total = json.loads(row["fields"]).get("total_cents")
-            if type(total) is not int: raise WorkflowError("Set a valid document total before allocating.", 409)
         absolute = abs(total); shares = [(key, absolute * basis // 1_000_000, (absolute * basis) % 1_000_000, basis) for key, basis in parsed]
         remaining = absolute - sum(value for _, value, _, _ in shares)
         winners = {key for key, _, _, _ in sorted(shares, key=lambda item: (-item[2], item[0]))[:remaining]}
         result_items = [{"destination": key, "percent": f"{Decimal(basis)/10000:.4f}", "cents": (-value if total < 0 else value) + (-1 if total < 0 and key in winners else 1 if total >= 0 and key in winners else 0)} for key, value, _, basis in shares]
         allocated = sum(item["cents"] for item in result_items)
-        return {"document_id": document_id, "source_cents": total, "allocated_cents": allocated, "difference_cents": total - allocated, "items": result_items}
+        return {"source_cents": total, "allocated_cents": allocated, "difference_cents": total - allocated, "items": result_items}
+
+    def allocation_preview(self, document_id, items):
+        with self.connect() as db:
+            row = self.get(db, document_id)
+            total = json.loads(row["fields"]).get("total_cents")
+        return {"document_id": document_id} | self._allocation_preview_for_total(total, items)
 
     def save_allocations(self, document_id, items, revision, actor):
         preview = self.allocation_preview(document_id, items)
@@ -404,7 +419,15 @@ class Store:
 
     def allocation_templates(self):
         with self.connect() as db:
-            return [dict(row) | {"items": json.loads(row["items"])} for row in db.execute("SELECT * FROM allocation_templates ORDER BY name")]
+            templates = []
+            for row in db.execute("SELECT * FROM allocation_templates ORDER BY name"):
+                try:
+                    items = json.loads(row["items"])
+                    normalize_allocation_items(items)
+                except (TypeError, ValueError, WorkflowError, json.JSONDecodeError):
+                    raise WorkflowError(f"Stored allocation template '{row['name']}' is invalid. An administrator must replace it.", 409) from None
+                templates.append(dict(row) | {"items": items})
+            return templates
 
     def save_allocation_template(self, name, items, actor, revision=None):
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,80}", name): raise WorkflowError("Template name is invalid.")
@@ -425,14 +448,16 @@ class Store:
             with self.connect() as db: return self.mapping_profile(db)
         row=db.execute("SELECT profile,revision,actor,updated_at FROM mapping_profiles WHERE id=1").fetchone()
         if row is None: raise WorkflowError("Mapping profile is unavailable.",500)
-        return {"profile":json.loads(row["profile"]),"revision":row["revision"],"actor":row["actor"],"updated_at":row["updated_at"]}
+        try:
+            profile=json.loads(row["profile"])
+            normalize_mapping_profile(profile)
+            if type(row["revision"]) is not int or row["revision"] < 1 or not isinstance(row["actor"],str): raise WorkflowError("Stored mapping profile metadata is invalid.")
+        except (TypeError, ValueError, WorkflowError, json.JSONDecodeError):
+            raise WorkflowError("Stored mapping profile is invalid. An administrator must repair it before export.",409) from None
+        return {"profile":profile,"revision":row["revision"],"actor":row["actor"],"updated_at":row["updated_at"]}
 
     def save_mapping_profile(self, profile, revision, actor):
-        if not isinstance(profile,dict) or set(profile)!={"profile_version","account_map","expand_allocations"} or type(profile["profile_version"]) is not int or profile["profile_version"]!=1 or type(profile["expand_allocations"]) is not bool:
-            raise WorkflowError("Mapping profile must use the supported version and documented fields.")
-        mapping=profile["account_map"]
-        if not isinstance(mapping,dict) or len(mapping)>100 or any(not isinstance(k,str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}",k) or not isinstance(v,str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}",v) for k,v in mapping.items()):
-            raise WorkflowError("Account mapping must use supported source codes and safe target codes.")
+        normalize_mapping_profile(profile)
         with self.connect(write=True) as db:
             current=self.mapping_profile(db)
             if type(revision) is not int or revision!=current["revision"]: raise WorkflowError("Mapping profile changed. Refresh before saving.",409)

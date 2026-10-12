@@ -1,6 +1,7 @@
 import csv
 import io
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -86,6 +87,48 @@ class MappingTests(unittest.TestCase):
         self.assertFalse(receipt["replayed"]); self.assertTrue(replay["replayed"])
         self.assertEqual(receipt["record_count"],1)
         self.assertEqual(target.ledger()[0]["total_cents"],10000)
+
+    def test_concurrent_export_confirmation_is_exactly_once(self):
+        self.approve(); preview=self.store.mapping_dry_run(); barrier=threading.Barrier(2); outcomes=[]
+        def confirm(actor):
+            barrier.wait()
+            try:
+                result=self.store.confirm_mapping_export(preview["preview_id"],preview["profile_revision"],actor)
+                outcomes.append(("exported",result["id"]))
+            except WorkflowError:
+                outcomes.append(("stale",None))
+        workers=[threading.Thread(target=confirm,args=(name,)) for name in ("Reviewer A","Reviewer B")]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join()
+        self.assertCountEqual([result[0] for result in outcomes],["exported","stale"])
+        self.assertEqual(len(self.store.exports()),1)
+        self.assertEqual(self.store.detail(self.document)["status"],"exported")
+
+    def test_corrupted_persisted_mapping_profile_blocks_preview_and_confirmation_safely(self):
+        self.approve(); profile=self.store.mapping_profile()
+        with self.store.connect(write=True) as db:
+            db.execute("UPDATE mapping_profiles SET profile=? WHERE id=1",('{"profile_version":1,"account_map":[],"expand_allocations":false}',))
+        with self.assertRaisesRegex(WorkflowError,"Stored mapping profile is invalid"):
+            self.store.mapping_dry_run()
+        with self.assertRaisesRegex(WorkflowError,"Stored mapping profile is invalid"):
+            self.store.confirm_mapping_export("0"*64,profile["revision"],"Reviewer")
+
+    def test_round_trip_reconciliation_reports_export_and_received_cents(self):
+        self.approve()
+        preview=self.store.mapping_dry_run()
+        exported=self.store.confirm_mapping_export(preview["preview_id"],preview["profile_revision"],"Exporter")
+        target=MockERP(Path(self.temp.name)/"reconcile-target.sqlite3")
+        bridge=DemoBridge(self.store)
+        bridge.request=lambda path,body=None: target.accept(body) if body is not None else target.batch_summary(path.rsplit("/",1)[-1])
+        pending=bridge.reconciliation()[0]
+        self.assertEqual(pending["delivery_state"],"not_sent")
+        bridge.send(exported["id"],"Delivery Admin")
+        row=bridge.reconciliation()[0]
+        self.assertEqual(row["delivery_state"],"reconciled")
+        self.assertEqual((row["source_total_cents"],row["mapped_total_cents"],row["export_total_cents"],row["received_total_cents"]),(10000,10000,10000,10000))
+        self.assertEqual(row["source_mapping_difference_cents"],0)
+        self.assertEqual(row["mapping_export_difference_cents"],0)
+        self.assertEqual(row["export_received_difference_cents"],0)
 
 
 if __name__=="__main__": unittest.main()

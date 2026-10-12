@@ -28,6 +28,7 @@ Production base URL is the configured HTTPS origin. Authenticated requests use t
 | POST | `/api/mapping/profile` | Admin | `{profile,revision}`; revision-checked mapping update |
 | GET | `/api/mapping/dry-run` | Reviewer+ | Non-persistent mapped rows, rejected rows, profile revision, source/mapped signed-cent totals, and preview hash |
 | POST | `/api/mapping/exports` | Reviewer+ | `{preview_id,revision}`; a reviewer other than the last profile editor recomputes the dry-run and creates the immutable mapped snapshot |
+| GET | `/api/reconciliation` | Signed in (local demo) | Source → mapped export → local simulated ERP receipt totals, differences, and receipt integrity state |
 | GET | `/api/events` | Viewer+ | Latest 500 events |
 | POST | `/api/exports` | Admin | Snapshot approved records |
 | GET | `/api/exports` | Viewer+ | Saved exports |
@@ -42,3 +43,5 @@ Imports and exports use SQLite transactions. Exports revalidate approvals inside
 Excel intake accepts `.xlsx` only, with one worksheet, a 1 MB source limit, 500 rows, and the same `vendor,date,total` schema as CSV. The preview reports row-level mapping/validation failures; formulas are rejected and no record is created until a reviewer confirms a clean preview. Excel rows never bypass normal validation, review, independent approval, or audit history.
 
 The generic simulated-ledger v1 profile maps approved source account codes to invented target codes. Dry-run is read-only; confirmation rechecks both the profile revision and a digest of the current source records inside the export transaction. Optional allocation expansion emits one non-zero posting row per saved destination. The resulting CSV is an immutable export accepted only by the local simulated ERP; it is not a live accounting connector. The older default CSV remains one row per source document.
+
+The reconciliation endpoint is available only when the local simulated bridge is configured. It compares signed integer-cent source and mapped totals, checks the immutable CSV content hash and total, and—after delivery—compares the mock ERP's receipt hash, row count, and received cent sum. `not_sent`, unavailable target, and mismatches remain visible states; they are never silently reported as reconciled.

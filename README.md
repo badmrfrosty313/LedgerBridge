@@ -4,7 +4,7 @@
 
 LedgerBridge imports business documents, finds validation exceptions, records human review, creates durable CSV exports, and can demonstrate delivery to a separate simulated ERP. The code supports a single organization per database. Demo and pilot documents are fully invented synthetic examples.
 
-This is a completed portfolio project, maintained as time permits. Support, response times, compatibility, and future updates are not guaranteed. It is released under [MIT](LICENSE); see [dependency attribution](THIRD_PARTY_NOTICES.md) and [release notes](docs/RELEASE_NOTES.md).
+The latest published package is v0.2.0; the separate `codex/ledgerbridge-v2-campaign` branch is an unreleased development candidate. Support, response times, compatibility, and future updates are not guaranteed. The project is released under [MIT](LICENSE); see [dependency attribution](THIRD_PARTY_NOTICES.md) and [release notes](docs/RELEASE_NOTES.md).
 
 ## Explore locally
 
@@ -66,4 +66,4 @@ GitHub Actions runs Python tests on Windows and Linux, plus a browser workflow t
 
 Run the [closed pilot kit](pilot/README.md) with `python -m pilot.run` to check a synthetic exception queue, two-person approval, export totals, and restore. The [security review](docs/SECURITY_REVIEW.md) records controls tested and remaining release gates.
 
-The [API reference](docs/API.md) describes the endpoints and permissions. [ROADMAP.md](docs/ROADMAP.md) tracks PDF/image OCR, future AI/MCP features, and verified real-accounting connector requirements.
+The [API reference](docs/API.md) describes the endpoints and permissions. The [v2 campaign candidate guide](docs/V2_RELEASE_CANDIDATE.md) documents the synthetic XLSX-to-simulated-ledger demonstration and release gates. [ROADMAP.md](docs/ROADMAP.md) tracks excluded future work including PDF/image OCR, AI/MCP features, and verified real-accounting connector requirements.

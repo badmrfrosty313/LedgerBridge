@@ -40,6 +40,19 @@ class AllocationTests(unittest.TestCase):
   self.assertEqual(changed["allocations"],[])
   self.assertTrue(any(event["action"]=="allocations_invalidated" for event in changed["events"]))
   with self.assertRaises(WorkflowError): self.store.transition(self.doc,"approve",changed["revision"],"Approver")
+ def test_total_change_requires_reallocation_then_allows_independent_approval_and_export(self):
+  document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC TOTAL REVISION,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
+  current=self.store.detail(document)
+  saved=self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],current["revision"],"Allocator")
+  changed=self.store.edit(document,{"total_cents":12000},saved["revision"],"Editor")
+  self.assertIn("allocation_review_required",[issue["code"] for issue in changed["issues"]])
+  with self.assertRaises(WorkflowError): self.store.transition(document,"approve",changed["revision"],"Approver",independent=True)
+  resaved=self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],changed["revision"],"Allocator")
+  self.assertNotIn("allocation_review_required",[issue["code"] for issue in resaved["issues"]])
+  approved=self.store.transition(document,"approve",resaved["revision"],"Approver",independent=True)
+  self.assertEqual(approved["status"],"approved")
+  result=self.store.export("Admin")
+  self.assertIn("120.00",self.store.export_content(result["id"]))
  def test_corrupt_persisted_allocation_blocks_approval_and_export(self):
   document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
   doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
@@ -53,6 +66,22 @@ class AllocationTests(unittest.TestCase):
   with self.store.connect(write=True) as db: db.execute("UPDATE allocations SET cents=9999 WHERE document_id=? AND destination='Fund A'",(document,))
   with self.assertRaises(WorkflowError): self.store.export("Admin")
   with self.store.connect(write=True) as db: db.execute("UPDATE allocations SET cents=6000,percent='nonsense' WHERE document_id=? AND destination='Fund A'",(document,))
+  with self.assertRaises(WorkflowError): self.store.export("Admin")
+ def test_approval_revalidates_corrupt_percentages_destinations_and_duplicate_rows(self):
+  document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC INTEGRITY MATRIX,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
+  doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
+  with self.store.connect(write=True) as db: db.execute("UPDATE allocations SET percent='59' WHERE document_id=? AND destination='Fund A'",(document,))
+  with self.assertRaises(WorkflowError): self.store.transition(document,"approve",self.store.detail(document)["revision"],"Approver",independent=True)
+  with self.store.connect(write=True) as db:
+   db.execute("UPDATE allocations SET percent='60' WHERE document_id=? AND destination='Fund A'",(document,))
+   db.execute("UPDATE allocations SET destination='../unsafe' WHERE document_id=? AND destination='Fund B'",(document,))
+  with self.assertRaises(WorkflowError): self.store.transition(document,"approve",self.store.detail(document)["revision"],"Approver",independent=True)
+  with self.store.connect(write=True) as db:
+   db.execute("DROP TABLE allocations")
+   db.execute("CREATE TABLE allocations(document_id TEXT NOT NULL,destination TEXT NOT NULL,percent TEXT NOT NULL,cents INTEGER NOT NULL,revision INTEGER NOT NULL)")
+   db.executemany("INSERT INTO allocations VALUES (?,?,?,?,?)",[(document,"Fund A","60",6000,2),(document,"Fund A","40",4000,2)])
+  with self.assertRaises(WorkflowError): self.store.transition(document,"approve",self.store.detail(document)["revision"],"Approver",independent=True)
+  with self.store.connect(write=True) as db: db.execute("UPDATE documents SET status='approved' WHERE id=?",(document,))
   with self.assertRaises(WorkflowError): self.store.export("Admin")
  def test_template_validation_revision_and_restart(self):
   valid=[{"destination":"Fund A","percent":"60.0000"},{"destination":"Fund B","percent":"40"}]
@@ -102,3 +131,8 @@ class AllocationTests(unittest.TestCase):
   templates=self.store.save_allocation_template("Synthetic split",[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],"Admin")
   self.assertEqual(templates[0]["name"],"Synthetic split")
   self.assertTrue(any(event["action"]=="allocation_template_saved" for event in self.store.events()))
+ def test_corrupted_persisted_template_fails_with_controlled_error(self):
+  self.store.save_allocation_template("Synthetic split",[{"destination":"Fund A","percent":"100"}],"Admin")
+  with self.store.connect(write=True) as db: db.execute("UPDATE allocation_templates SET items='not-json' WHERE name='Synthetic split'")
+  with self.assertRaisesRegex(WorkflowError,"Stored allocation template"):
+   self.store.allocation_templates()

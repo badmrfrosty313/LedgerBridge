@@ -188,8 +188,16 @@ async function showView(view) {
   document.querySelectorAll(".nav").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#view-name").textContent = labels[view];
   if (view === "exports") {
-    const [result, deliveryResult] = await Promise.all([api("/api/exports"), state.session?.demo_mode === false ? Promise.resolve({deliveries: []}) : api("/api/bridge/deliveries")]);
+    const simulated = state.session?.demo_mode !== false;
+    const [result, deliveryResult, reconciliationResult] = await Promise.all([api("/api/exports"), simulated ? api("/api/bridge/deliveries") : Promise.resolve({deliveries: []}), simulated ? api("/api/reconciliation") : Promise.resolve({reconciliations: []})]);
     const deliveries = new Map(deliveryResult.deliveries.map((item) => [item.export_id, item.receipt]));
+    const stateLabel = {reconciled:"Reconciled",not_sent:"Not sent to demo ERP",target_unavailable:"Demo target unavailable",export_mismatch:"Export integrity mismatch",receipt_mismatch:"Receipt discrepancy"};
+    const reconciliations = reconciliationResult.reconciliations;
+    $("#reconciliation-list").innerHTML = reconciliations.length ? reconciliations.map(item => {
+      const label=stateLabel[item.delivery_state] || item.delivery_state;
+      const deltas=[item.source_mapping_difference_cents,item.mapping_export_difference_cents,item.export_received_difference_cents].filter(value=>value!==null).map(formatMoney).join(" / ");
+      return '<div class="reconciliation-row"><div><strong>Export '+escapeHtml(item.export_id.slice(0,8))+' · '+escapeHtml(label)+'</strong><small>Source '+escapeHtml(formatMoney(item.source_total_cents))+' → mapped '+escapeHtml(formatMoney(item.mapped_total_cents))+' → immutable CSV '+escapeHtml(formatMoney(item.export_total_cents))+' → received '+escapeHtml(formatMoney(item.received_total_cents))+'</small><small>'+item.row_count+' posting rows · mapping v'+item.profile_version+' · differences '+escapeHtml(deltas)+'</small></div><span class="badge '+(item.delivery_state==="reconciled"?"approved":"exceptions")+'">'+escapeHtml(label)+'</span></div>';
+    }).join("") : '<p class="muted">No mapped exports yet. Legacy CSV snapshots remain one row per source document.</p>';
     $("#export-list").innerHTML = (state.session?.demo_mode === false ? '' : '<p>Optional demo connector: start <code>python -m ledgerbridge.mock_erp</code> in a second terminal, then send an export to its separate ledger. Retrying the same batch does not post twice.</p>') + (result.exports.length ? result.exports.map((item) => `<div class="export-row"><div><strong>Export ${item.id.slice(0, 8)}</strong><small>${escapeHtml(displayDate(item.created_at))} · ${escapeHtml(item.actor)}</small>${deliveries.has(item.id) ? `<small>Demo ERP receipt ${deliveries.get(item.id).receipt_id.slice(0, 8)} · ${deliveries.get(item.id).record_count} records</small>` : ''}</div><div class="export-actions"><a class="download" href="/api/exports/${item.id}/download">Download CSV ↗</a>${state.session?.demo_mode === false || state.session?.role !== 'admin' && state.session?.role !== undefined ? '' : `<button class="secondary" data-send-demo="${item.id}">${deliveries.has(item.id) ? 'Verify / retry demo ERP' : 'Send to demo ERP'}</button>`}</div></div>`).join("") : '<p>No exports yet. Approve records in the review queue, then create a CSV.</p>');
     $("#export-list").querySelectorAll('[data-send-demo]').forEach((button) => button.addEventListener('click', () => run(async () => {
       const receipt = await api(`/api/exports/${button.dataset.sendDemo}/send-demo`, 'POST', {});
@@ -197,6 +205,9 @@ async function showView(view) {
     })));
     if (state.session?.role === "viewer") $("#mapping-panel").hidden=true;
     else { $("#mapping-panel").hidden=false; $("#mapping-profile-controls").hidden=state.session?.role!=="admin"; await loadMappingProfile(); }
+    $("#reconciliation-list").setAttribute("aria-label", "Export reconciliation results");
+    $("#reconciliation-list").setAttribute("role", "region");
+    $("#reconciliation-list").hidden = !simulated;
   }
   if (view === "audit") $("#audit-list").innerHTML = eventsHtml((await api("/api/events")).events);
 }

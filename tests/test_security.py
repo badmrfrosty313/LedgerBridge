@@ -200,6 +200,16 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(migrated.detail(doc_id)["fields"]["total_cents"],100)
         self.assertEqual(len(list(self.path.parent.glob("*.pre-v2-*.bak"))), 1)
 
+    def test_newer_schema_is_rejected_without_rewriting_existing_database(self):
+        doc_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC FUTURE DB,2026-10-12,1.00,5100","future.csv","admin")[0]["id"]
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute("PRAGMA user_version=7")
+        with self.assertRaises(WorkflowError): Store(self.path)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],7)
+            fields=json.loads(db.execute("SELECT fields FROM documents WHERE id=?",(doc_id,)).fetchone()[0])
+            self.assertEqual(fields["total_cents"],100)
+
 
 if __name__ == "__main__":
     unittest.main()

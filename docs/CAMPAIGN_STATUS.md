@@ -2,23 +2,34 @@
 
 Branch: `codex/ledgerbridge-v2-campaign`
 
-## Current checkpoint
+## Latest pushed checkpoint before this work
 
-Commit `e2f4e0e` is pushed on `codex/ledgerbridge-v2-campaign`. Current uncommitted M4 work broadens queue search, explains reviewer/immutable-export controls, and tests empty states, keyboard selection, inert HTML-looking content, and 1280px/mobile layout.
+`b37c208` — reviewer queue and accessibility checks. The current uncommitted checkpoint extends M4 reconciliation UX, M5 trust/regression coverage, and M6 synthetic candidate evidence.
 
-## Evidence at this checkpoint
+## Issue #5 review read
 
-- `python -m unittest discover -s tests -v`: 57 tests passed, including M2 financial integrity, migrations, permissions, M3 mapping dry-runs, stale confirmation, and simulated receipt retry.
-- `python -m pilot.run`: passed; 11 synthetic records, 8 exported, `$638.00`.
-- `python scripts/release.py --check`: passed (`v0.2.0` metadata).
-- `python -m compileall -q ledgerbridge`, `node --check ledgerbridge/static/app.js`, `node --check tests/browser-check.cjs`, and `git diff --check`: passed before the last status edit.
-- GitHub Actions run 44 for `e2e618d`: all four Python matrix jobs passed; the browser job failed at `Verify browser workflow`. Run 45 for `e2f4e0e` again passed the four-job Python matrix but failed its browser job. GitHub's public run page exposes only the failed step, not its Playwright assertion. Local replay found a race where the test edited mapping controls before the profile load finished; the browser test now waits for that load. The full browser journey—including M1, allocation, mapping, and M4 interaction coverage—passes locally using system Chromium 154 with `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium`. The managed browser installer still redirects to `storage.googleapis.com` and is blocked; the onboarding draft allows that host and `cdn.playwright.dev`, but requires user review/publication.
+The latest public Issue #5 architecture review comment is [6130205816](https://github.com/badmrfrosty313/LedgerBridge/issues/5#issuecomment-6130205816), reviewing `197c9df` and `33c6667`. It called out template input validation, missing template role/CSRF and revision coverage, the missing corrupt-after-approval export regression, legacy schema migration/backup verification, and M1/M2-specific Playwright coverage. These areas now have implementation and automated tests across the prior campaign commits and current additions; M2 is not declared complete until final CI is green.
 
-## Remaining work
+## Local verification at this working checkpoint
 
-- Finish review/acceptance of M2 and M1 by verifying the next CI run is green. The legacy CSV intentionally remains one row per source document and does not contain split allocation rows.
-- Finish M3 with the next browser CI gate and review remaining mapping edge cases. The configured connector is strictly local/simulated.
-- Finish M4 accessibility, dashboard and reconciliation acceptance. Current work covers filters, reviewer guidance, 1280px/mobile overflow, keyboard queue selection, empty filtering, and inert HTML-like values; broader workflow acceptance still remains.
-- Then implement M4 reviewer dashboard, M5 security/reliability regression gates, and M6 synthetic portfolio/release-candidate artifacts. M7 remains excluded.
+- `python -m unittest discover -s tests -v`: 68 tests passed; the subsequent normalized ZIP-path collision check passed its focused 7-test Excel suite.
+- `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 23.017 ms; this is a local sample, not a performance or savings claim.
+- `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
+- Compileall, JavaScript syntax, and `git diff --check`: passed.
+- Full Playwright browser workflow passed locally using installed system Chromium at `/usr/bin/chromium`, fresh temporary SQLite files, and isolated ports. It covered XLSX preview/formula rejection/confirm; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation; round-trip cents; simulated ERP retry; immutable export lock; keyboard, empty state, HTML safety, desktop and mobile layout. The managed Playwright browser installer remains restricted by network policy until the saved environment draft is reviewed/published.
 
-Continuation: push the M4 checkpoint, verify the next CI run's Python matrix and Playwright status, fix any failures, complete M1–M4 acceptance, then proceed through M5 and M6.
+## Remote CI and remaining acceptance gates
+
+The last publicly observable run for pushed commit `b37c208` (Actions run [38293942403](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38293942403)) failed. Earlier Python matrix jobs were green, but the full gate is not green because the browser workflow failed. The public page does not expose the detailed private job log here. Local replay found and fixed a hard-coded test origin and request-context cookie issue; the corrected complete local browser flow passes. The next pushed commit must be checked in GitHub Actions. Do not call M1–M6 complete while final CI is red or pending.
+
+### Milestone state
+
+- M1/M2: implementation includes session-owned one-use XLSX previews, browser confirmation tests, allocation templates, versioned migrations, independent approval, total-change review-required state, corrupted persisted allocation checks on approval/export, and concurrency tests. Legacy CSV remains intentionally one row per source document. Final CI/browser green gate remains.
+- M3: versioned generic account mapping, non-persistent dry-run, immutable allocation-aware mapped export, mock ERP idempotency, and reconciliation logic are implemented. No live connector.
+- M4: reviewer queue search/filter/status summaries, exception/source/history guidance, keyboard and responsive checks, and a visible source→export→simulated receipt cent reconciliation panel are implemented.
+- M5: tests now cover malformed/corrupted persisted records, XLSX path/external-link/compression limits, malformed Base64, concurrency, legacy backup/restore, and fail-closed newer DB versions. Cross-platform remote matrix and final CI remain.
+- M6: a synthetic end-to-end harness, candidate guide, manual demo, architecture/sequence diagrams, benchmark caveat, screenshot plan, accessibility notes, and no-merge/release checklist are added. Final CI and final artifact review remain.
+- M7 OCR/AI is excluded.
+
+Continuation: commit and push the current checkpoint, verify the complete GitHub Actions matrix/browser result, fix any failures, then continue closing any remaining M1–M6 acceptance gaps without merging or publishing.

@@ -63,6 +63,14 @@ class MockERP:
         with self.store.connect() as db:
             return [dict(row) for row in db.execute("SELECT record_id,batch_id,vendor,date,total_cents,currency,account_code FROM ledger ORDER BY rowid DESC")]
 
+    def batch_summary(self, batch_id):
+        with self.store.connect() as db:
+            batch = db.execute("SELECT * FROM batches WHERE batch_id=?", (batch_id,)).fetchone()
+            if batch is None:
+                raise WorkflowError("Simulated ERP batch not found.", 404)
+            ledger = db.execute("SELECT COUNT(*) AS row_count,COALESCE(SUM(total_cents),0) AS total_cents FROM ledger WHERE batch_id=?", (batch_id,)).fetchone()
+            return dict(batch) | {"received_row_count": ledger["row_count"], "received_total_cents": ledger["total_cents"]}
+
 
 def erp_handler(erp):
     class Handler(handler_for(None)):
@@ -73,6 +81,9 @@ def erp_handler(erp):
                 return self.respond({"name": "LedgerBridge Demo ERP", "status": "ok", "ledger_count": len(erp.ledger())})
             if self.command == "GET" and path == "/api/ledger":
                 return self.respond({"records": erp.ledger()})
+            match = re.fullmatch(r"/api/batches/([a-f0-9]{32})", path)
+            if self.command == "GET" and match:
+                return self.respond(erp.batch_summary(match[1]))
             if self.command == "POST" and path == "/api/batches":
                 return self.respond(erp.accept(self.body()), 201)
             raise WorkflowError("Route not found.", 404)
