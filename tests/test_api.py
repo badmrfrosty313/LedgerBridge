@@ -83,6 +83,15 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(len(json.loads(body)["records"]), 1)
 
+    def test_allocation_preview_and_confirm_require_a_current_revision(self):
+        status, _, body = self.request("POST", "/api/import/csv", {"text": "vendor,date,total,account_code\nSYNTHETIC,2026-10-01,0.01,5100", "actor": "Tester"})
+        document_id = json.loads(body)["records"][0]["id"]
+        status, _, body = self.request("POST", f"/api/documents/{document_id}/allocations/preview", {"items": [{"destination":"Fund A","percent":"50"},{"destination":"Fund B","percent":"50"}], "actor":"Tester"})
+        self.assertEqual(status, 200); self.assertEqual(sum(item["cents"] for item in json.loads(body)["items"]), 1)
+        revision = json.loads(self.request("GET", "/api/documents/" + document_id)[2])["revision"]
+        status, _, body = self.request("POST", f"/api/documents/{document_id}/allocations/confirm", {"items": [{"destination":"Fund A","percent":"50"},{"destination":"Fund B","percent":"50"}], "revision": revision, "actor":"Tester"})
+        self.assertEqual(status, 200); self.assertEqual(len(json.loads(body)["allocations"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
