@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`5fdaaff` — signed-credit policy and mapped export validation, compatibility for pre-existing rule settings, reviewer queue filters, and expanded synthetic workflow coverage. The newest worktree adds an explicit at-limit XLSX regression.
+`c8ae57a` — signed-credit policy and mapped export validation, compatibility for pre-existing rule settings, reviewer queue filters, and explicit exact-500-row XLSX acceptance. The current worktree adds a valid near-1-MB workbook parsing boundary test.
 
 ## Issue #5 review read
 
@@ -12,16 +12,16 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 ## Local verification at this working checkpoint
 
-- `python -m unittest discover -s tests -q`: 73 tests passed.
+- `python -m unittest discover -s tests -q`: 74 tests passed.
 - `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
-- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 23.313 ms; this is a local sample, not a performance or savings claim.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.218 ms; this is a local sample, not a performance or savings claim.
 - `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
 - Compileall, JavaScript syntax, and `git diff --check`: passed.
 - Full Playwright browser workflow passed locally using installed system Chromium at `/usr/bin/chromium`, fresh temporary SQLite files, and isolated ports. It covered XLSX preview/formula rejection/confirm; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. The managed Playwright browser installer remains restricted by network policy until the saved environment draft is reviewed/published.
 
 ## Remote CI and remaining acceptance gates
 
-Actions run [38295442894](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295442894) for `90c3c97` failed the browser workflow after the matrix run was initiated; the public page does not expose its detailed private job log here. Local replay identified the browser environment issues and the corrected complete browser flow passes. The current in-progress changes are not yet run in GitHub Actions. Do not call M1–M6 complete while final CI is red or pending.
+Actions run [38295442894](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295442894) for `90c3c97` failed the browser workflow after the matrix run was initiated; the public page does not expose its detailed private job log here. Local replay identified the browser environment issues and the corrected complete browser flow passes. Attempts to inspect newer runs via the GitHub API return `Forbidden`, so remote status for `5fdaaff` and `c8ae57a` remains unverified. The current in-progress change also awaits remote CI. Do not call M1–M6 complete while final CI is red or pending.
 
 ### Milestone state
 

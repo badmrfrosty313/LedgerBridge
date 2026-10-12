@@ -79,3 +79,16 @@ class ExcelPreviewTests(unittest.TestCase):
         self.assertEqual(sum(row["fields"]["total_cents"] for row in preview), 50_000)
         self.assertTrue(all(not row["errors"] for row in preview))
 
+    def test_valid_workbook_near_one_megabyte_is_bounded_and_parsed(self):
+        clean = workbook([["vendor", "date", "total"], ["SYNTHETIC BOUNDARY", "2026-10-01", "0.01"]])
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(clean)) as source, zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as target:
+            for item in source.infolist():
+                target.writestr(item.filename, source.read(item))
+            target.writestr("custom/synthetic-padding.bin", bytes(range(256)) * 3500)
+        payload = output.getvalue()
+        self.assertGreater(len(payload), 900_000)
+        self.assertLess(len(payload), 1_000_000)
+        preview = preview_xlsx(payload, "near-limit-synthetic.xlsx")
+        self.assertEqual(preview[0]["fields"]["total_cents"], 1)
+
