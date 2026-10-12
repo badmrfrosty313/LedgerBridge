@@ -36,3 +36,7 @@ class AllocationTests(unittest.TestCase):
   doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
   doc=self.store.detail(document); self.store.transition(document,"approve",doc["revision"],"Approver",independent=True)
   exported=self.store.export("Admin"); self.assertIn("100.00",self.store.export_content(exported["id"]))
+ def test_templates_are_persisted_and_audited(self):
+  templates=self.store.save_allocation_template("Synthetic split",[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],"Admin")
+  self.assertEqual(templates[0]["name"],"Synthetic split")
+  self.assertTrue(any(event["action"]=="allocation_template_saved" for event in self.store.events()))

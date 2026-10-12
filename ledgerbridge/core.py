@@ -117,7 +117,7 @@ class Store:
         if self.path.exists():
             with closing(sqlite3.connect(self.path)) as previous:
                 version = previous.execute("PRAGMA user_version").fetchone()[0]
-                if version > 4:
+                if version > 5:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
                 old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
                 if version == 0 and old_schema:
@@ -141,11 +141,12 @@ class Store:
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination));
                 CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0);
+                CREATE TABLE IF NOT EXISTS allocation_templates (name TEXT PRIMARY KEY, items TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0: db.execute("PRAGMA user_version=1"); version = 1
-            if version < 4: db.execute("PRAGMA user_version=4")
+            if version < 5: db.execute("PRAGMA user_version=5")
         if os.name == "posix" and self.path.exists():
             os.chmod(self.path, 0o600)
 
@@ -372,6 +373,22 @@ class Store:
             db.execute("UPDATE documents SET status='draft', revision=revision+1, updated_at=? WHERE id=?", (now(), document_id))
             self.audit(db, document_id, "allocations_saved", actor, preview)
         return self.detail(document_id)
+
+    def allocation_templates(self):
+        with self.connect() as db:
+            return [dict(row) | {"items": json.loads(row["items"])} for row in db.execute("SELECT * FROM allocation_templates ORDER BY name")]
+
+    def save_allocation_template(self, name, items, actor):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,80}", name): raise WorkflowError("Template name is invalid.")
+        # Validate percentages independently of a document total using a synthetic cent.
+        parsed = []
+        for item in items:
+            if not isinstance(item, dict): raise WorkflowError("Template items are invalid.")
+            parsed.append(item)
+        with self.connect(write=True) as db:
+            db.execute("INSERT INTO allocation_templates VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET items=excluded.items,revision=allocation_templates.revision+1,actor=excluded.actor,created_at=excluded.created_at", (name, json.dumps(parsed), 1, actor, now()))
+            self.audit(db, None, "allocation_template_saved", actor, {"name": name, "items": parsed})
+        return self.allocation_templates()
 
     def check_revision(self, row, revision):
         if type(revision) is not int or row["revision"] != revision:
