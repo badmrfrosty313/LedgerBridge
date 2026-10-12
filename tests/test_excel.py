@@ -71,3 +71,11 @@ class ExcelPreviewTests(unittest.TestCase):
         with self.assertRaises(WorkflowError):
             preview_xlsx(workbook(rows), "synthetic.xlsx")
 
+    def test_accepts_exactly_five_hundred_rows_at_the_documented_limit(self):
+        rows = [["vendor", "date", "total"]] + [[f"SYNTHETIC {i}", "2026-10-01", "1.00"] for i in range(500)]
+        preview = preview_xlsx(workbook(rows), "synthetic.xlsx")
+        self.assertEqual(len(preview), 500)
+        self.assertEqual(preview[-1]["row"], 501)
+        self.assertEqual(sum(row["fields"]["total_cents"] for row in preview), 50_000)
+        self.assertTrue(all(not row["errors"] for row in preview))
+
