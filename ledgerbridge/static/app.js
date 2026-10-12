@@ -3,6 +3,7 @@ const $ = (selector) => document.querySelector(selector);
 const state = {documents: [], selected: null, detail: null, rules: null, view: "documents", busy: false, session: null};
 const labels = {documents: "Review queue", imports: "Import documents", exports: "Export history", rules: "Business rules", audit: "Activity log"};
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+function base64File(buffer) { const bytes = new Uint8Array(buffer), chunks = []; for (let index = 0; index < bytes.length; index += 0x8000) chunks.push(String.fromCharCode(...bytes.subarray(index, index + 0x8000))); return btoa(chunks.join("")); }
 const displayDate = (value) => new Date(value).toLocaleString();
 function formatMoney(cents) {
   if (cents === null || cents === undefined) return "—";
@@ -179,6 +180,18 @@ $("#csv-import").addEventListener("submit", (event) => {
     const result = await api("/api/import/csv", "POST", {text: await file.text(), source_name: file.name});
     await refresh(); await showView("documents"); if (result.records.length) await selectDocument(result.records[0].id);
     notify(`${result.records.filter((record) => !record.existing).length} records imported. Review them before approving.`);
+  });
+});
+$("#xlsx-import").addEventListener("submit", (event) => {
+  event.preventDefault(); run(async () => {
+    const target = $("#xlsx-preview"); target.hidden = true; target.textContent = "";
+    const file = event.target.elements.file.files[0]; if (!file) throw new Error("Choose an Excel file.");
+    if (file.size > 1000000) throw new Error("Excel limit is 1 MB.");
+    const content_base64 = base64File(await file.arrayBuffer());
+    const result = await api("/api/import/xlsx/preview", "POST", {content_base64, source_name: file.name});
+    target.hidden = false;
+    target.innerHTML = `<div class="${result.valid ? 'clear-box' : 'issue-box'}"><strong>${result.valid ? `${result.rows.length} rows ready to import` : 'Workbook needs corrections'}</strong><ul>${result.rows.map(row => { const f = row.fields; return `<li>Row ${row.row}: ${escapeHtml(f.vendor || 'Missing vendor')} · ${escapeHtml(f.date || 'Missing date')} · ${escapeHtml(formatMoney(f.total_cents))} · ${escapeHtml(f.account_code || 'No account code')}${row.errors.length ? ` — ${escapeHtml(row.errors.join(' '))}` : ''}</li>`; }).join('')}</ul>${result.valid ? '<button class="primary" id="confirm-xlsx">Confirm import as draft records</button>' : '<p>These are workbook parse errors. Correct them and upload again; business-rule exceptions appear after draft import. Nothing has been imported.</p>'}</div>`;
+    $("#confirm-xlsx")?.addEventListener("click", () => run(async () => { const imported = await api("/api/import/xlsx/confirm", "POST", {preview_token: result.preview_token}); await refresh(); await showView("documents"); notify(`${imported.records.filter(r => !r.existing).length} Excel rows imported as drafts. Review them before approving.`); target.hidden = true; }));
   });
 });
 $("#rules-form").addEventListener("submit", (event) => {event.preventDefault(); run(saveRules);});

@@ -14,11 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements-prod.txt
       - run: python -m unittest discover -s tests -v
       - run: python -m pilot.run
       - run: python scripts/release.py --check
       - run: python -m compileall -q ledgerbridge
-      - run: python -m pip install -r requirements-prod.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

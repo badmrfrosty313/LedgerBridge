@@ -1,10 +1,13 @@
 import http.client
+import base64
+import io
 import json
 import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from openpyxl import Workbook
 
 from ledgerbridge.core import Store
 from ledgerbridge.server import handler_for
@@ -64,6 +67,21 @@ class ApiTests(unittest.TestCase):
             self.assertIn("error", json.loads(data))
         status, _, _ = self.request("GET", "/../../etc/passwd")
         self.assertEqual(status, 404)
+
+    def test_excel_preview_requires_confirmation_before_creating_drafts(self):
+        book = Workbook(); sheet = book.active
+        sheet.append(["vendor", "date", "total", "account_code"])
+        sheet.append(["SYNTHETIC EXCEL SUPPLIES", "2026-10-01", "42.00", "5100"])
+        output = io.BytesIO(); book.save(output)
+        payload = {"content_base64": base64.b64encode(output.getvalue()).decode(), "source_name": "synthetic.xlsx", "actor": "Tester"}
+        status, _, body = self.request("POST", "/api/import/xlsx/preview", payload)
+        self.assertEqual(status, 200)
+        preview = json.loads(body)
+        self.assertTrue(preview["valid"])
+        self.assertEqual(json.loads(self.request("GET", "/api/documents")[2])["documents"], [])
+        status, _, body = self.request("POST", "/api/import/xlsx/confirm", {"preview_token": preview["preview_token"], "actor": "Tester"})
+        self.assertEqual(status, 201)
+        self.assertEqual(len(json.loads(body)["records"]), 1)
 
 
 if __name__ == "__main__":
