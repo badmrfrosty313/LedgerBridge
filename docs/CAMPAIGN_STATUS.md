@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`42628e5` — extends the resource-bound regression suite with a valid synthetic workbook near the 1 MB intake limit, in addition to exact acceptance at the 500-row cap.
+`6637a72` — records the synthetic 500-row and near-1 MB workbook limits and local workflow verification. The current worktree adds duplicate-destination inline browser coverage, an explicit independent-approval readiness assertion, and a longer timeout for slow CI transitions.
 
 ## Issue #5 review read
 
@@ -21,7 +21,7 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 ## Remote CI and remaining acceptance gates
 
-Actions run [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) for `42628e5` was **in progress** when the public Actions page was inspected. The API endpoint itself returns `Forbidden`; the unauthenticated Actions page is sufficient to read the run summary, not private job logs. The preceding `90c3c97` run [38295442894](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295442894) failed browser CI; the complete corrected flow now passes locally. Do not call M1–M6 complete while final CI is red or pending.
+Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`) and [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`) both failed the browser job; Python matrix checks passed. The public job summary exposes only the step exit code; API access to logs is forbidden. The exact Playwright-pinned Chromium 151 flow passes locally, so the new browser-only checkpoint increases transition timeout and strengthens inline validation/readiness diagnostics. The preceding [38295442894](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38295442894) (`90c3c97`) also failed browser CI. No remote green result is claimed; continue investigating until the final run is green.
 
 ### Milestone state
 

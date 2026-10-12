@@ -7,7 +7,9 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  if(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)launchOptions.executablePath=process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
  const browser = await chromium.launch(launchOptions);
  const page = await browser.newPage({viewport:{width:1440,height:1100}});
- page.setDefaultTimeout(10000);
+ // CI's shared Linux runners can be slower during the full multi-role flow;
+ // keep assertion failures actionable without timing out healthy transitions.
+ page.setDefaultTimeout(30000);
  const errors = [];
  page.on('pageerror', e => errors.push(e.message));
  async function switchUser(username, password) {
@@ -66,7 +68,9 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.locator('input[name="department"]').fill('Technology');
  await page.getByRole('button', {name:'Save corrections'}).click();
  await page.getByText('Corrections saved.', {exact:false}).waitFor();
- await page.getByRole('button', {name:'Approve record',exact:true}).click();
+ const firstApprove=page.getByRole('button', {name:'Approve record',exact:true});
+ assert.equal(await firstApprove.isEnabled(),true,`corrected record should be ready for approval: ${await page.locator('#detail').innerText()}`);
+ await firstApprove.click();
  await page.locator('#notification').getByText('A different reviewer must approve', {exact:false}).waitFor();
  await switchUser('approver', 'TestOnlyApproverPassword2026!');
  await openDocument('ORBITAL CLOUD SERVICES');
@@ -121,6 +125,13 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.getByRole('button',{name:'Preview allocation'}).click();
  await page.getByText('Percentages must total exactly 100.0000%').waitFor();
  await page.getByRole('textbox',{name:'Percentage 2'}).fill('40');
+ await page.getByRole('textbox',{name:'Destination 2'}).fill('Fund A');
+ await page.getByRole('button',{name:'Preview allocation'}).click();
+ await page.locator('.allocation-row-error').filter({hasText:'Destination must be unique.'}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Confirm allocation save'}).isEnabled(),false);
+ await page.getByRole('textbox',{name:'Destination 2'}).fill('Fund B');
+ await page.getByRole('button',{name:'Preview allocation'}).click();
+ await page.getByText('Source $48.00',{exact:false}).waitFor();
  await page.locator('#allocation-template-name').fill('Browser synthetic split');
  await page.getByRole('button',{name:'Save current rows as template'}).click();
  await page.getByText('Allocation template saved.',{exact:false}).waitFor();
@@ -242,5 +253,5 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'mobile horizontal overflow');
  assert.deepEqual(errors,[]);
  await browser.close();
- console.log('Browser workflow passed: XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation, round-trip cent reconciliation and simulated ERP retry; immutable export lock; mobile layout; no JS errors.');
+ console.log('Browser workflow passed: XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent approval and validation; mapping dry-run/confirmation, round-trip cent reconciliation and simulated ERP retry; immutable export lock; mobile layout; no JS errors.');
 })().catch(e=>{console.error(e);process.exit(1)});
