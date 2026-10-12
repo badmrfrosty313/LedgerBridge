@@ -12,6 +12,8 @@ Production base URL is the configured HTTPS origin. Authenticated requests use t
 | GET | `/api/documents/{id}` | Viewer+ | Record, source, history |
 | POST | `/api/import/text` | Reviewer+ | `{text,source_name}` |
 | POST | `/api/import/csv` | Reviewer+ | `{text,source_name}` |
+| POST | `/api/import/xlsx/preview` | Reviewer+ | `{content_base64,source_name}`; validate one bounded worksheet without persistence |
+| POST | `/api/import/xlsx/confirm` | Reviewer+ | `{preview_token}`; import a clean preview as draft records |
 | PATCH | `/api/documents/{id}` | Reviewer+ | `{fields,revision}` |
 | POST | `/api/documents/{id}/approve` | Reviewer+ | `{revision}` |
 | POST | `/api/documents/{id}/reject` | Reviewer+ | `{revision,reason}` |
@@ -28,3 +30,5 @@ Local demo and authenticated local modes also offer `POST /api/demo`, `GET /api/
 Money fields in edits are integer cents: `subtotal_cents`, `tax_cents`, `total_cents`. Other editable fields: `vendor`, `document_number`, `date`, `account_code`, `department`, `notes`. Dates use YYYY-MM-DD. A stale revision or validation conflict returns 409; bad input 400; an unauthenticated request 401; missing permission/token or wrong origin/host 403; missing resource 404; excessive body 413; wrong content type 415. Errors return `{"error":"explanation"}`.
 
 Imports and exports use SQLite transactions. Exports revalidate approvals inside the transaction and lock exported records. Saved snapshots remain downloadable and demo ERP retries use stable batch IDs.
+
+Excel intake accepts `.xlsx` only, with one worksheet, a 1 MB source limit, 500 rows, and the same `vendor,date,total` schema as CSV. The preview reports row-level mapping/validation failures; formulas are rejected and no record is created until a reviewer confirms a clean preview. Excel rows never bypass normal validation, review, independent approval, or audit history.

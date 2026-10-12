@@ -181,6 +181,17 @@ $("#csv-import").addEventListener("submit", (event) => {
     notify(`${result.records.filter((record) => !record.existing).length} records imported. Review them before approving.`);
   });
 });
+$("#xlsx-import").addEventListener("submit", (event) => {
+  event.preventDefault(); run(async () => {
+    const file = event.target.elements.file.files[0]; if (!file) throw new Error("Choose an Excel file.");
+    if (file.size > 1000000) throw new Error("Excel limit is 1 MB.");
+    const content_base64 = btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())));
+    const result = await api("/api/import/xlsx/preview", "POST", {content_base64, source_name: file.name});
+    const target = $("#xlsx-preview"); target.hidden = false;
+    target.innerHTML = `<div class="${result.valid ? 'clear-box' : 'issue-box'}"><strong>${result.valid ? `${result.rows.length} rows ready to import` : 'Workbook needs corrections'}</strong><ul>${result.rows.map(row => `<li>Row ${row.row}: ${row.errors.length ? escapeHtml(row.errors.join(' ')) : 'Ready'}</li>`).join('')}</ul>${result.valid ? '<button class="primary" id="confirm-xlsx">Confirm import as draft records</button>' : '<p>Correct the listed rows in Excel, then upload a new workbook. Nothing has been imported.</p>'}</div>`;
+    $("#confirm-xlsx")?.addEventListener("click", () => run(async () => { const imported = await api("/api/import/xlsx/confirm", "POST", {preview_token: result.preview_token}); await refresh(); await showView("documents"); notify(`${imported.records.filter(r => !r.existing).length} Excel rows imported as drafts. Review them before approving.`); target.hidden = true; }));
+  });
+});
 $("#rules-form").addEventListener("submit", (event) => {event.preventDefault(); run(saveRules);});
 $("#export-approved").addEventListener("click", () => run(async () => {
   const result = await api("/api/exports", "POST", {}); await refresh(); await showView("exports");
