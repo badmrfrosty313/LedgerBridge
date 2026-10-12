@@ -117,7 +117,7 @@ class Store:
         if self.path.exists():
             with closing(sqlite3.connect(self.path)) as previous:
                 version = previous.execute("PRAGMA user_version").fetchone()[0]
-                if version > 3:
+                if version > 4:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
                 old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
                 if version == 0 and old_schema:
@@ -140,11 +140,12 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination));
+                CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0: db.execute("PRAGMA user_version=1"); version = 1
-            if version < 3: db.execute("PRAGMA user_version=3")
+            if version < 4: db.execute("PRAGMA user_version=4")
         if os.name == "posix" and self.path.exists():
             os.chmod(self.path, 0o600)
 
@@ -204,12 +205,21 @@ class Store:
                 add("invalid_" + key, f"{key.replace('_', ' ').title()} is not in the configured list.")
         vendor = (fields.get("vendor") or "").strip().casefold()
         allocations = [dict(item) for item in db.execute("SELECT destination,percent,cents FROM allocations WHERE document_id=?", (row["id"],))]
+        pending = db.execute("SELECT review_required FROM allocation_state WHERE document_id=?", (row["id"],)).fetchone()
+        if pending and pending["review_required"]:
+            add("allocation_review_required", "The document total changed after allocation. Save a newly reviewed allocation before approval.")
         if allocations:
             allocated = sum(item["cents"] for item in allocations)
             if allocated != fields.get("total_cents"):
                 add("allocation_stale", "Saved allocations do not reconcile to the current document total. Preview and save them again.")
             if any(not item["destination"] or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]) for item in allocations):
                 add("allocation_destination", "Saved allocation has an invalid destination.")
+            try:
+                expected = self.allocation_preview(row["id"], [{"destination": item["destination"], "percent": item["percent"]} for item in allocations])
+                if sorted((item["destination"], item["cents"]) for item in expected["items"]) != sorted((item["destination"], item["cents"]) for item in allocations):
+                    add("allocation_corrupt", "Saved allocations differ from the deterministic percentage calculation.")
+            except WorkflowError as exc:
+                add("allocation_invalid", str(exc))
         number = (fields.get("document_number") or "").strip().casefold()
         if vendor:
             for other in db.execute("SELECT id, fields FROM documents WHERE id != ? AND status != 'rejected'", (row["id"],)):
@@ -321,6 +331,7 @@ class Store:
             total_changed = "total_cents" in fields and fields["total_cents"] != before.get("total_cents")
             if total_changed and db.execute("SELECT 1 FROM allocations WHERE document_id=?", (document_id,)).fetchone():
                 db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
+                db.execute("INSERT INTO allocation_state(document_id,review_required) VALUES (?,1) ON CONFLICT(document_id) DO UPDATE SET review_required=1", (document_id,))
                 self.audit(db, document_id, "allocations_invalidated", actor, {"reason":"Document total changed", "before_total_cents":before.get("total_cents"), "after_total_cents":after.get("total_cents")})
             db.execute("UPDATE documents SET fields=?, status='draft', revision=revision+1, updated_at=? WHERE id=?", (json.dumps(after), now(), document_id))
             self.audit(db, document_id, "edited", actor, {"before": before, "after": after, "previous_status": row["status"]})
@@ -357,6 +368,7 @@ class Store:
             if row["status"] not in ("draft", "approved"): raise WorkflowError("Reopen a rejected record before changing allocations; exported records are immutable.", 409)
             db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
             for item in preview["items"]: db.execute("INSERT INTO allocations VALUES (?,?,?,?,?)", (document_id,item["destination"],item["percent"],item["cents"],revision + 1))
+            db.execute("INSERT INTO allocation_state(document_id,review_required) VALUES (?,0) ON CONFLICT(document_id) DO UPDATE SET review_required=0", (document_id,))
             db.execute("UPDATE documents SET status='draft', revision=revision+1, updated_at=? WHERE id=?", (now(), document_id))
             self.audit(db, document_id, "allocations_saved", actor, preview)
         return self.detail(document_id)

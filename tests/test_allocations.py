@@ -24,6 +24,13 @@ class AllocationTests(unittest.TestCase):
   doc=self.store.detail(self.doc); changed=self.store.edit(self.doc,{"total_cents":2},doc["revision"],"Reviewer")
   self.assertEqual(changed["allocations"],[])
   self.assertTrue(any(event["action"]=="allocations_invalidated" for event in changed["events"]))
+  with self.assertRaises(WorkflowError): self.store.transition(self.doc,"approve",changed["revision"],"Approver")
+ def test_corrupt_persisted_allocation_blocks_approval_and_export(self):
+  document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
+  doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
+  with self.store.connect(write=True) as db: db.execute("UPDATE allocations SET cents=9999 WHERE document_id=? AND destination='Fund A'",(document,))
+  doc=self.store.detail(document); self.assertIn("allocation_stale",[issue["code"] for issue in doc["issues"]])
+  with self.assertRaises(WorkflowError): self.store.transition(document,"approve",doc["revision"],"Approver",independent=True)
  def test_hundred_dollar_allocation_approves_and_exports_legacy_total(self):
   document=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC,2026-10-01,100.00,5100","synthetic.csv","Importer")[0]["id"]
   doc=self.store.detail(document); self.store.save_allocations(document,[{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}],doc["revision"],"Allocator")
