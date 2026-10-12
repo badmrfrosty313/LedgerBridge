@@ -334,7 +334,9 @@ class Store:
         absolute = abs(total); shares = [(key, absolute * basis // 1_000_000, (absolute * basis) % 1_000_000, basis) for key, basis in parsed]
         remaining = absolute - sum(value for _, value, _, _ in shares)
         winners = {key for key, _, _, _ in sorted(shares, key=lambda item: (-item[2], item[0]))[:remaining]}
-        return {"document_id": document_id, "source_cents": total, "allocated_cents": total, "difference_cents": 0, "items": [{"destination": key, "percent": f"{Decimal(basis)/10000:.4f}", "cents": (-value if total < 0 else value) + (-1 if total < 0 and key in winners else 1 if total >= 0 and key in winners else 0)} for key, value, _, basis in shares]}
+        result_items = [{"destination": key, "percent": f"{Decimal(basis)/10000:.4f}", "cents": (-value if total < 0 else value) + (-1 if total < 0 and key in winners else 1 if total >= 0 and key in winners else 0)} for key, value, _, basis in shares]
+        allocated = sum(item["cents"] for item in result_items)
+        return {"document_id": document_id, "source_cents": total, "allocated_cents": allocated, "difference_cents": total - allocated, "items": result_items}
 
     def save_allocations(self, document_id, items, revision, actor):
         preview = self.allocation_preview(document_id, items)
