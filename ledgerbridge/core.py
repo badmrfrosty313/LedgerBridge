@@ -220,6 +220,7 @@ class Store:
             result[key] = json.loads(result[key])
         result["issues"] = self.issues(db, row) if row["status"] != "exported" else []
         result["ready"] = not result["issues"] and row["status"] == "draft"
+        result["allocations"] = [dict(item) for item in db.execute("SELECT destination,percent,cents,revision FROM allocations WHERE document_id=? ORDER BY destination", (row["id"],))]
         return result
 
     def list_documents(self):
@@ -339,7 +340,7 @@ class Store:
         preview = self.allocation_preview(document_id, items)
         with self.connect(write=True) as db:
             row = self.get(db, document_id); self.check_revision(row, revision)
-            if row["status"] == "exported": raise WorkflowError("Exported records are immutable.", 409)
+            if row["status"] not in ("draft", "approved"): raise WorkflowError("Reopen a rejected record before changing allocations; exported records are immutable.", 409)
             db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
             for item in preview["items"]: db.execute("INSERT INTO allocations VALUES (?,?,?,?,?)", (document_id,item["destination"],item["percent"],item["cents"],revision + 1))
             db.execute("UPDATE documents SET status='draft', revision=revision+1, updated_at=? WHERE id=?", (now(), document_id))
@@ -357,7 +358,7 @@ class Store:
             if action == "approve":
                 if row["status"] != "draft":
                     raise WorkflowError("Only draft records can be approved.", 409)
-                if independent and db.execute("SELECT 1 FROM events WHERE document_id=? AND action IN ('imported','edited') AND actor=? LIMIT 1", (document_id, actor)).fetchone():
+                if independent and db.execute("SELECT 1 FROM events WHERE document_id=? AND action IN ('imported','edited','allocations_saved') AND actor=? LIMIT 1", (document_id, actor)).fetchone():
                     raise WorkflowError("A different reviewer must approve a record you imported or corrected.", 409)
                 issues = self.issues(db, row)
                 if issues:
