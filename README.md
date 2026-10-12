@@ -42,7 +42,7 @@ This is a deployable single-organization service, not a claim of compliance cert
 
 ## Workflow
 
-1. Paste document text or import a CSV. A reviewer checks the extracted proposal.
+1. Paste document text, import CSV, or upload a bounded `.xlsx` workbook. Excel uploads show a row-level preview and require explicit confirmation before draft records are created.
 2. Resolve missing fields, duplicate candidates, reconciliation differences, and account code exceptions.
 3. Approve a record; changing it or the business rules clears approval.
 4. An admin exports approved records into an immutable CSV snapshot.
@@ -50,7 +50,7 @@ This is a deployable single-organization service, not a claim of compliance cert
 
 Exact reimports open the original record. Potential duplicates use vendor + document number, or vendor + date + total when neither has a document number. Reviewers decide which copy to reject.
 
-CSV import requires `vendor,date,total`; optional columns are `document_number,subtotal,tax,account_code,department,notes`. Dates use YYYY-MM-DD and monetary amounts use decimal currency. See [sample_import.csv](examples/sample_import.csv). Import limits: 500 rows and 1 MB. The browser and API reject invalid dates, fractional cents, and stale revisions.
+CSV and `.xlsx` import require `vendor,date,total`; optional columns are `document_number,subtotal,tax,account_code,department,notes`. Excel accepts exactly one worksheet, rejects formulas and unsafe/oversized workbooks, and never executes macros or external links. Dates use YYYY-MM-DD and monetary amounts use decimal currency with no fractional-cent rounding. See [sample_import.csv](examples/sample_import.csv). Import limits: 500 rows and 1 MB. The browser and API reject invalid dates, fractional cents, and stale revisions; imported records remain drafts and require normal independent approval.
 
 Data resides in `data/ledgerbridge.sqlite3` unless `--db` selects another path. It is excluded from Git. Back up using the SQLite snapshot command in the deployment guide. Changes to older unversioned databases create a snapshot before upgrading.
 

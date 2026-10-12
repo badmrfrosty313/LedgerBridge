@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import logging
 import re
 import threading
+import uuid
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from .core import Store, WorkflowError
+from .excel import preview_xlsx
 from . import __version__
 
 ROOT = Path(__file__).parent
@@ -22,6 +25,7 @@ LOGIN_SLOTS = threading.BoundedSemaphore(4)
 
 
 def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=True):
+    previews = {}
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             LOG.info(fmt, *args)
@@ -163,6 +167,31 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                 if path == "/api/import/csv":
                     self.require_role("reviewer")
                     return self.respond({"records": store.import_csv(body.get("text"), body.get("source_name", "Imported CSV"), actor)}, 201)
+                if path == "/api/import/xlsx/preview":
+                    self.require_role("reviewer")
+                    encoded = body.get("content_base64")
+                    if not isinstance(encoded, str):
+                        raise WorkflowError("Excel content is required.")
+                    try:
+                        content = base64.b64decode(encoded, validate=True)
+                    except ValueError:
+                        raise WorkflowError("Excel upload is not valid base64.") from None
+                    rows = preview_xlsx(content, body.get("source_name", "Imported.xlsx"))
+                    token = uuid.uuid4().hex
+                    previews[token] = {"actor": actor, "source_name": body.get("source_name", "Imported.xlsx"), "rows": rows}
+                    return self.respond({"preview_token": token, "rows": rows, "valid": not any(row["errors"] for row in rows)})
+                if path == "/api/import/xlsx/confirm":
+                    self.require_role("reviewer")
+                    token = body.get("preview_token")
+                    preview = previews.get(token)
+                    if not preview or preview["actor"] != actor:
+                        raise WorkflowError("Excel preview has expired. Upload the workbook again.", 409)
+                    if any(row["errors"] for row in preview["rows"]):
+                        raise WorkflowError("Fix workbook row errors and create a new preview before importing.", 409)
+                    records = [{"fields": row["fields"], "source_name": f"{preview['source_name']} · row {row['row']}", "raw_text": json.dumps(row["fields"], sort_keys=True), "document_type": "xlsx_row", "warnings": []} for row in preview["rows"]]
+                    result = store.import_records(records, actor)
+                    del previews[token]
+                    return self.respond({"records": result}, 201)
                 if path == "/api/demo" and demo_mode:
                     self.require_role("reviewer")
                     fixtures = json.loads((ROOT / "demo.json").read_text())["fixtures"]
