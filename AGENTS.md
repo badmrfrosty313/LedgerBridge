@@ -39,3 +39,7 @@ Turn the existing LedgerBridge v0.2.0 into a polished, demonstrable financial-op
 3. Configurable simulated accounting export/mapping and round-trip checks. Live third-party integration is out of scope.
 4. Portfolio-quality demo, architecture documentation, screenshots, and measurable synthetic case study.
 5. Optional OCR/AI-assisted extraction only after deterministic financial controls are solid.
+
+## Authorized full-build campaign
+
+For the owner's one-shot LedgerBridge 2.0 build assignment, the canonical detailed scope and acceptance gates are in [docs/V2_EXECUTION_PLAN.md](docs/V2_EXECUTION_PLAN.md) with milestone Issues #5-#9. Read that document first and finish the in-flight M1 / PR #4 reviews before starting M2. This explicitly authorizes incremental implementation of M2-M6 on a separate campaign branch, subject to the document's test, progress, privacy and no-merge boundaries. The original small-PR preference remains; if Codex cannot use the GitHub API, push milestone commits to a reviewable campaign branch and provide compare URLs. M7 / Issue #10 (OCR and AI) is **design-only until separate owner approval**. Never merge PRs, touch main, create tags/releases or connect real accounting systems as part of this campaign.
