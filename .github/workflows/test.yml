@@ -45,7 +45,29 @@ jobs:
           python -m ledgerbridge.server --local-auth --db /tmp/ledgerbridge-browser.sqlite3 > /tmp/ledgerbridge-server.log 2>&1 &
           python -m ledgerbridge.mock_erp --db /tmp/ledgerbridge-demo-erp.sqlite3 > /tmp/ledgerbridge-erp.log 2>&1 &
           trap 'cat /tmp/ledgerbridge-server.log' EXIT
-          python -c "import time, urllib.request; time.sleep(1); urllib.request.urlopen('http://127.0.0.1:8765/api/health')"
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          endpoints = (
+              "http://127.0.0.1:8765/api/health",
+              "http://127.0.0.1:8766/api/health",
+          )
+          deadline = time.monotonic() + 30
+          pending = set(endpoints)
+          while pending and time.monotonic() < deadline:
+              for endpoint in tuple(pending):
+                  try:
+                      with urllib.request.urlopen(endpoint, timeout=1) as response:
+                          if response.status == 200:
+                              pending.remove(endpoint)
+                  except OSError:
+                      pass
+              if pending:
+                  time.sleep(0.25)
+          if pending:
+              raise SystemExit(f"Test services did not become ready: {sorted(pending)}")
+          PY
           npm run test:browser
       - name: Verify production Waitress startup
         run: |
