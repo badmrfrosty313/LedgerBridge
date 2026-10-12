@@ -71,6 +71,13 @@ class BridgeTests(unittest.TestCase):
             self.erp.accept({"batch_id": self.export["id"], "records": rows})
         self.assertEqual(self.erp.ledger(), [])
 
+    def test_mock_target_rejects_unsafe_target_account_codes_atomically(self):
+        rows = list(csv.DictReader(io.StringIO(self.store.export_content(self.export["id"]))))
+        rows.append(rows[0] | {"record_id": "c" * 32, "account_code": "6100\n=1+1"})
+        with self.assertRaisesRegex(WorkflowError, "Invalid target account code"):
+            self.erp.accept({"batch_id": self.export["id"], "records": rows})
+        self.assertEqual(self.erp.ledger(), [])
+
     def test_receipt_mismatch_is_not_recorded_as_delivered(self):
         self.bridge.request = lambda *args: {"batch_id": self.export["id"], "record_count": 99}
         with self.assertRaises(WorkflowError) as caught:

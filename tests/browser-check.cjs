@@ -66,7 +66,13 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await openDocument('ORBITAL CLOUD SERVICES');
  await page.locator('input[name="account_code"]').fill('5100');
  await page.locator('input[name="department"]').fill('Technology');
+ assert.equal(await page.locator('input[name="account_code"]').inputValue(),'5100');
+ const correctionResponse=page.waitForResponse(response=>response.request().method()==='PATCH' && response.url().includes('/api/documents/'));
  await page.getByRole('button', {name:'Save corrections'}).click();
+ const correction=await correctionResponse;
+ assert.equal(correction.status(),200,`correction API rejected: ${await correction.text()}`);
+ const corrected=await correction.json();
+ assert.equal(corrected.fields.account_code,'5100',`correction omitted account code: ${JSON.stringify(corrected.fields)}`);
  await page.getByText('Corrections saved.', {exact:false}).waitFor();
  const firstApprove=page.getByRole('button', {name:'Approve record',exact:true});
  assert.equal(await firstApprove.isEnabled(),true,`corrected record should be ready for approval: ${await page.locator('#detail').innerText()}`);

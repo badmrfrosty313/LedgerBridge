@@ -43,6 +43,8 @@ class MockERP:
                     raise WorkflowError("A record is missing required ledger fields.")
                 if not re.fullmatch(r"[a-f0-9]{32}", row["record_id"]) or not re.fullmatch(r"[A-Z]{3}", row["currency"]):
                     raise WorkflowError("Invalid record identifier or currency.")
+                if not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", row["account_code"]):
+                    raise WorkflowError("Invalid target account code.")
                 try:
                     if date.fromisoformat(row["date"]).isoformat() != row["date"]:
                         raise ValueError

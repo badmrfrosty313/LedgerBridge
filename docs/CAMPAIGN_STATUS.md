@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`8899df6` — makes browser-job service readiness wait for both local health endpoints instead of sleeping for one second. The current worktree bounds failed Playwright output into a synthetic-only GitHub check annotation to diagnose private raw logs.
+`710f158` — makes browser-job service readiness wait for both local endpoints and exposes a bounded synthetic-only Playwright failure annotation for diagnosis. The current worktree validates target-account syntax at the simulated ERP boundary and tests atomic rejection; Playwright also asserts that an account-code correction is persisted in the PATCH response before approving.
 
 ## Issue #5 review read
 
@@ -12,16 +12,16 @@ The latest public Issue #5 architecture review comment is [6130205816](https://g
 
 ## Local verification at this working checkpoint
 
-- `python -m unittest discover -s tests -q`: 74 tests passed.
+- `python -m unittest discover -s tests -q`: 75 tests passed.
 - `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
-- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.218 ms; this is a local sample, not a performance or savings claim.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 20.936 ms; this is a local sample, not a performance or savings claim.
 - `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
-- Compileall, JavaScript syntax, and `git diff --check`: passed.
-- Full Playwright browser workflow passed locally after `42628e5` using installed system Chromium at `/usr/bin/chromium`, fresh temporary SQLite files, and isolated ports. It covered XLSX preview/formula rejection/confirm; allocation preview/save/refresh/independent approval; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. The managed Playwright browser installer remains restricted by network policy until the saved environment draft is reviewed/published.
+- Compileall, JavaScript syntax, `pip check`, and `git diff --check`: passed. Production Waitress startup/health passed from `/tmp/ledgerbridge-prod-deps` with a temporary synthetic database.
+- Full Playwright browser workflow passed locally on both system Chromium and Playwright-pinned Chromium 151 with fresh temporary SQLite files and isolated ports. It covers XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent approval, invalid totals and duplicate destinations; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. Playwright Chromium was installed to `/tmp/ledgerbridge-playwright-browsers` because the managed home cache is not writable.
 
 ## Remote CI and remaining acceptance gates
 
-Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`), and [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618) (`8899df6`) all failed the browser job; Python matrix checks passed. The third failure happened in three seconds after the browser step began, despite the service-readiness guard. The public job summary exposes only the step exit code and raw logs are permission-blocked. The exact Playwright-pinned Chromium 151 flow passes locally. The next workflow change surfaces only the last 4 KB of synthetic browser failure output as a check annotation so the actual CI assertion can be diagnosed. No remote green result is claimed; continue investigating until the final run is green.
+Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502) (`42628e5`), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924) (`6637a72`), and [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618) (`8899df6`) failed the browser job while Python matrix checks passed. The public annotation from run [38298253269](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298253269) (`710f158`) identifies the assertion: the synthetic `ORBITAL CLOUD SERVICES` record still reported missing `account_code` after the browser's correction save. The 75-test local suite, both pilots, production Waitress smoke test, and full Playwright journey pass locally on Playwright-pinned Chromium 151. New assertions inspect the PATCH response so the next CI run distinguishes a failed form payload from a stale UI refresh. No remote green result is claimed; continue investigating until the final run is green.
 
 ### Milestone state
 
