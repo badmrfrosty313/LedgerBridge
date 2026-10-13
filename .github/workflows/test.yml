@@ -40,7 +40,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify browser workflow
         run: |
-          python -c "from ledgerbridge.auth import Auth; from ledgerbridge.core import Store; a=Auth(Store('/tmp/ledgerbridge-browser.sqlite3')); a.add_user('tester','TestOnlyPassword2026!','admin'); a.add_user('approver','TestOnlyApproverPassword2026!','reviewer')"
+          python -c "from ledgerbridge.auth import Auth; from ledgerbridge.core import Store; a=Auth(Store('/tmp/ledgerbridge-browser.sqlite3')); a.add_user('tester','TestOnlyPassword2026!','admin'); a.add_user('approver','TestOnlyApproverPassword2026!','reviewer'); a.add_user('admin-two','TestOnlySecondAdminPassword2026!','admin')"
           python tests/create_synthetic_xlsx.py
           python -m ledgerbridge.server --local-auth --db /tmp/ledgerbridge-browser.sqlite3 > /tmp/ledgerbridge-server.log 2>&1 &
           python -m ledgerbridge.mock_erp --db /tmp/ledgerbridge-demo-erp.sqlite3 > /tmp/ledgerbridge-erp.log 2>&1 &

@@ -199,12 +199,17 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                         content = base64.b64decode(encoded, validate=True)
                     except ValueError:
                         raise WorkflowError("Excel upload is not valid base64.") from None
-                    rows = preview_xlsx(content, body.get("source_name", "Imported.xlsx"))
+                    source_name = body.get("source_name", "Imported.xlsx")
+                    rows = preview_xlsx(content, source_name)
+                    # Row provenance is stored in documents and adds a suffix;
+                    # reject impossible labels before issuing a one-use token.
+                    if len(source_name) + len(f" · row {len(rows) + 1}") > 200:
+                        raise WorkflowError("Excel file name is too long to preserve row provenance; rename it and preview again.")
                     token = uuid.uuid4().hex
                     with preview_lock:
                         for key in [key for key, value in previews.items() if value["expires"] <= time.monotonic()]: previews.pop(key, None)
                         while len(previews) >= preview_capacity: previews.popitem(last=False)
-                        previews[token] = {"owner": session_owner, "source_name": body.get("source_name", "Imported.xlsx"), "rows": rows, "expires": time.monotonic() + preview_ttl}
+                        previews[token] = {"owner": session_owner, "source_name": source_name, "rows": rows, "expires": time.monotonic() + preview_ttl}
                     return self.respond({"preview_token": token, "rows": rows, "valid": not any(row["errors"] for row in rows)})
                 if path == "/api/import/xlsx/confirm":
                     self.require_role("reviewer")
@@ -226,7 +231,7 @@ def handler_for(store, bridge=None, auth=None, public_origin=None, demo_mode=Tru
                     self.require_role("admin")
                     return self.respond(store.save_mapping_profile(body.get("profile"),body.get("revision"),actor))
                 if path == "/api/mapping/exports":
-                    self.require_role("reviewer")
+                    self.require_role("admin")
                     return self.respond(store.confirm_mapping_export(body.get("preview_id"),body.get("revision"),actor),201)
                 match = re.fullmatch(r"/api/documents/([a-f0-9]{32})/allocations/template-preview", path)
                 if match:

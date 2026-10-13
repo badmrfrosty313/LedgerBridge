@@ -83,6 +83,24 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(len(json.loads(body)["records"]), 1)
 
+    def test_xlsx_filename_bound_is_checked_before_issuing_a_one_use_preview(self):
+        book=Workbook(); sheet=book.active
+        sheet.append(["vendor","date","total"]); sheet.append(["SYNTHETIC NAME BOUNDARY","2026-10-12","1.00"])
+        output=io.BytesIO(); book.save(output); encoded=base64.b64encode(output.getvalue()).decode()
+        too_long="x"*195+".xlsx"
+        status,_,body=self.request("POST","/api/import/xlsx/preview",{"content_base64":encoded,"source_name":too_long})
+        self.assertEqual(status,400); self.assertIn("too long",json.loads(body)["error"])
+        accepted="x"*187+".xlsx" # room for the row 2 provenance suffix
+        status,_,body=self.request("POST","/api/import/xlsx/preview",{"content_base64":encoded,"source_name":accepted,"actor":"Tester"})
+        self.assertEqual(status,200,body)
+        token=json.loads(body)["preview_token"]
+        status,_,body=self.request("POST","/api/import/xlsx/confirm",{"preview_token":token,"actor":"Tester"})
+        self.assertEqual(status,201,body)
+        imported_id=json.loads(body)["records"][0]["id"]
+        status,_,body=self.request("GET","/api/documents")
+        imported=next(row for row in json.loads(body)["documents"] if row["id"]==imported_id)
+        self.assertEqual(len(imported["source_name"]),200)
+
     def test_excel_preview_rejects_malformed_base64_and_confirmation_is_single_use_under_race(self):
         for encoded in ("%%%", "YWJj$", ""):
             status, _, body = self.request("POST", "/api/import/xlsx/preview", {"content_base64": encoded, "source_name": "synthetic.xlsx", "actor": "Tester"})

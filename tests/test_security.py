@@ -168,7 +168,7 @@ class SecurityTests(unittest.TestCase):
         saved=request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie,csrf=admin_csrf)
         self.assertEqual(saved["status"],200)
         self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie)["status"],403)
-        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],409)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],403)
         rules=self.store.rules()
         enabled=rules["rules"]|{"allow_credits":True}
         self.assertEqual(request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie)["status"],403)
@@ -176,6 +176,28 @@ class SecurityTests(unittest.TestCase):
         changed=request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie,csrf=admin_csrf)
         self.assertEqual(changed["status"],200)
         self.assertTrue(json.loads(changed["body"])["rules"]["allow_credits"])
+
+    def test_mapped_export_requires_an_independent_administrator(self):
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        self.auth.add_user("admin-two", "SecondAdminPasswordForTests2026!", "admin")
+        admin_cookie, admin_csrf = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
+        reviewer_cookie, reviewer_csrf = self.login("reviewer", "ReviewerPasswordForTests2026!")
+        viewer_cookie, viewer_csrf = self.login("viewer", "AnotherExamplePasswordForTests2026!")
+        second_cookie, second_csrf = self.login("admin-two", "SecondAdminPasswordForTests2026!")
+        imported = request(self.app,"POST","/api/import/csv",{"text":"vendor,date,total,account_code\nSYNTHETIC EXPORT,2026-10-12,10.00,5100"},cookie=admin_cookie,csrf=admin_csrf)
+        document_id=json.loads(imported["body"])["records"][0]["id"]
+        approved=request(self.app,"POST",f"/api/documents/{document_id}/approve",{"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)
+        self.assertEqual(approved["status"],200)
+        profile=self.store.mapping_profile()
+        self.assertEqual(request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie,csrf=admin_csrf)["status"],200)
+        preview=self.store.mapping_dry_run()
+        body={"preview_id":preview["preview_id"],"revision":preview["profile_revision"]}
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=viewer_cookie,csrf=viewer_csrf)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=admin_cookie,csrf=admin_csrf)["status"],409)
+        exported=request(self.app,"POST","/api/mapping/exports",body,cookie=second_cookie,csrf=second_csrf)
+        self.assertEqual(exported["status"],201,exported["body"])
+        self.assertEqual(self.store.detail(document_id)["status"],"exported")
 
     def test_session_expires_and_raw_token_is_never_stored(self):
         cookie, _ = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
@@ -190,7 +212,12 @@ class SecurityTests(unittest.TestCase):
         doc_id = self.store.import_csv("vendor,date,total,account_code\nAcme,2026-10-01,42.00,5100", "demo", "admin")[0]["id"]
         destination = Path(self.temp.name) / "backups" / "snapshot.sqlite3"
         backup_database(self.path, destination)
+        with closing(sqlite3.connect(destination)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
         restored = Store(destination)
+        Auth(restored)
+        with closing(sqlite3.connect(destination)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
         self.assertEqual(restored.detail(doc_id)["fields"]["total_cents"], 4200)
         self.assertTrue(Auth(restored).has_users())
         with self.assertRaises(ValueError):
@@ -201,12 +228,35 @@ class SecurityTests(unittest.TestCase):
     def test_old_database_auto_backup_before_schema_upgrade(self):
         doc_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC LEGACY,2026-10-12,1.00,5100","legacy.csv","admin")[0]["id"]
         with closing(sqlite3.connect(self.path)) as db:
-            db.execute("PRAGMA user_version=0")
+            db.execute("DROP TABLE mapping_export_meta")
+            db.execute("DROP TABLE mapping_profiles")
+            db.execute("DROP TABLE allocation_templates")
+            db.execute("DROP TABLE allocation_state")
+            db.execute("DROP INDEX allocations_by_document")
+            db.execute("PRAGMA user_version=2")
+            db.commit()
         migrated = Store(self.path)
         self.assertEqual(migrated.rules()["revision"], 1)
         self.assertEqual(migrated.detail(doc_id)["fields"]["total_cents"],100)
         self.assertEqual(len(list(self.path.parent.glob("*.pre-v2-*.bak"))), 1)
+        self.assertEqual(Auth(migrated).has_users(), True)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        restarted=Store(self.path); Auth(restarted); Store(self.path)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        backup=next(self.path.parent.glob("*.pre-v2-*.bak"))
+        restored=Store(backup); Auth(restored); Store(backup)
+        with closing(sqlite3.connect(backup)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+            self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mapping_export_meta'").fetchone())
 
+    def test_auth_initialization_never_changes_store_schema_version(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        Auth(self.store); Auth(Store(self.path))
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
     def test_newer_schema_is_rejected_without_rewriting_existing_database(self):
         doc_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC FUTURE DB,2026-10-12,1.00,5100","future.csv","admin")[0]["id"]
         with closing(sqlite3.connect(self.path)) as db:

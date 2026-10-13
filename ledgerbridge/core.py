@@ -160,7 +160,9 @@ class Store:
                 if version > 6:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
                 old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
-                if version == 0 and old_schema:
+                # Keep a pre-upgrade snapshot for every supported existing
+                # document database, not just unversioned v0.2.0 files.
+                if version < 6 and old_schema:
                     from .maintenance import backup_database
                     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
                     backup_database(self.path, self.path.with_name(f"{self.path.name}.pre-v2-{stamp}.bak"))
@@ -519,7 +521,7 @@ class Store:
             if not current["rows"]: raise WorkflowError("No approved records are available for mapped export.",409)
             profile_actor=self.mapping_profile(db)["actor"]
             if profile_actor!="system" and profile_actor==actor:
-                raise WorkflowError("A different reviewer must confirm the mapping export than the person who last changed its profile.",409)
+                raise WorkflowError("A different administrator must confirm the mapping export than the administrator who last changed its profile.",409)
             out=io.StringIO(newline=""); columns=("record_id","source_id","document_number","vendor","date","amount_cents","total","currency","account_code","department","destination","notes")
             writer=csv.DictWriter(out,fieldnames=columns); writer.writeheader()
             # These two fields are canonical numeric representations; escaping

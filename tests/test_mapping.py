@@ -153,6 +153,23 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(row["mapping_export_difference_cents"],0)
         self.assertEqual(row["export_received_difference_cents"],0)
 
+    def test_reconciliation_detects_target_reset_or_changed_receipt_identity(self):
+        self.approve(); preview=self.store.mapping_dry_run()
+        exported=self.store.confirm_mapping_export(preview["preview_id"],preview["profile_revision"],"Exporter")
+        target=MockERP(Path(self.temp.name)/"reset-target.sqlite3")
+        bridge=DemoBridge(self.store)
+        bridge.request=lambda path,body=None: target.accept(body) if body is not None else target.batch_summary(path.rsplit("/",1)[-1])
+        bridge.send(exported["id"],"Delivery Admin")
+        self.assertEqual(bridge.reconciliation()[0]["delivery_state"],"reconciled")
+        with target.store.connect(write=True) as db:
+            db.execute("UPDATE batches SET receipt_id=? WHERE batch_id=?",("f"*32,exported["id"]))
+        report=bridge.reconciliation()[0]
+        self.assertEqual(report["delivery_state"],"receipt_mismatch")
+        self.assertEqual(report["export_received_difference_cents"],0)
+        with target.store.connect(write=True) as db:
+            db.execute("DELETE FROM batches WHERE batch_id=?",(exported["id"],))
+        self.assertEqual(bridge.reconciliation()[0]["delivery_state"],"receipt_mismatch")
+
     def test_explicitly_enabled_negative_credit_reconciles_and_formula_text_is_safe(self):
         document=self.store.import_csv('vendor,date,total,account_code,notes\n"=HYPERLINK(1)",2026-10-12,-10.01,5100,"+CMD"',"credit.csv","Credit Intake")[0]["id"]
         row=self.store.detail(document)

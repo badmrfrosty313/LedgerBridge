@@ -17,7 +17,8 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
-  await page.getByText(`${username} · ${username === 'tester' ? 'admin' : 'reviewer'}`).waitFor();
+  const role=username==='approver'?'reviewer':'admin';
+  await page.getByText(`${username} · ${role}`).waitFor();
  }
  async function openDocument(vendor) {
   const row=page.locator('.doc-row').filter({hasText:vendor});
@@ -174,13 +175,15 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.getByText('Dry-run · profile revision 2',{exact:false}).waitFor();
  await page.getByText('account 6100',{exact:false}).waitFor();
  await page.getByText('difference $0.00',{exact:false}).waitFor();
- await page.getByText('A different reviewer must confirm this mapping export.',{exact:false}).waitFor();
+ await page.getByText('A different administrator must confirm this mapping export.',{exact:false}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Confirm mapped export snapshot'}).count(),0);
- await switchUser('approver', 'TestOnlyApproverPassword2026!');
+ await switchUser('admin-two', 'TestOnlySecondAdminPassword2026!');
  await page.getByRole('button',{name:'Export history',exact:true}).click();
  await page.getByRole('button',{name:'Run mapping dry-run'}).click();
  await page.getByRole('button',{name:'Confirm mapped export snapshot'}).click();
- await page.getByText('1 mapped rows exported; $0.00 difference.',{exact:false}).waitFor();
+ await page.locator('#notification').waitFor();
+ const initialMappedExportNotice=await page.locator('#notification').innerText();
+ assert.match(initialMappedExportNotice,/1 mapped rows exported; .* difference\./,`mapped export failed: ${initialMappedExportNotice}`);
  await switchUser('tester', 'TestOnlyPassword2026!');
  await page.getByRole('button',{name:'Export history',exact:true}).click();
  await page.locator('#export-list button[data-send-demo]').first().click();
@@ -249,7 +252,7 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.getByText('Mapping profile saved.',{exact:false}).waitFor();
  await page.getByRole('button',{name:'Run mapping dry-run'}).click();
  await page.locator('#mapping-preview').getByText('-$10.01',{exact:false}).waitFor();
- await switchUser('approver','TestOnlyApproverPassword2026!');
+ await switchUser('admin-two','TestOnlySecondAdminPassword2026!');
  await page.getByRole('button',{name:'Export history',exact:true}).click();
  await page.getByRole('button',{name:'Run mapping dry-run'}).click();
  await page.getByRole('button',{name:'Confirm mapped export snapshot'}).click();

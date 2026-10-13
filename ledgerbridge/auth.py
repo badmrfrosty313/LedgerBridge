@@ -45,7 +45,6 @@ class Auth:
                 FOREIGN KEY (username) REFERENCES users(username)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at)")
-            db.execute("PRAGMA user_version=2")
 
     def has_users(self) -> bool:
         with self.store.connect() as db:

@@ -31,6 +31,8 @@ class DemoBridge:
                     raise ValueError("Response must be an object")
                 return result
         except HTTPError as exc:
+            if exc.code == 404:
+                raise WorkflowError("Target batch receipt is missing; the simulated ERP may have been reset.", 409) from None
             raise WorkflowError(f"Demo ERP rejected the batch (HTTP {exc.code}).", 502) from None
         except (URLError, TimeoutError, OSError):
             raise WorkflowError("Demo ERP is unavailable. Start it with: python -m ledgerbridge.mock_erp", 503) from None
@@ -95,12 +97,20 @@ class DemoBridge:
                     received_value = target.get("received_total_cents")
                     if type(received_value) is int:
                         received = received_value
-                    if type(received_value) is int and target.get("payload_hash") == delivery.get("payload_hash") == hashlib.sha256(json.dumps(export_rows, sort_keys=True).encode()).hexdigest() and target.get("record_count") == target.get("received_row_count") == len(export_rows) and received == export_total:
+                    if (target.get("batch_id") == row["id"] == delivery.get("batch_id")
+                            and isinstance(target.get("receipt_id"), str)
+                            and target.get("receipt_id") == delivery.get("receipt_id")
+                            and type(received_value) is int
+                            and target.get("payload_hash") == delivery.get("payload_hash") == hashlib.sha256(json.dumps(export_rows, sort_keys=True).encode()).hexdigest()
+                            and target.get("record_count") == target.get("received_row_count") == len(export_rows)
+                            and received == export_total):
                         state = "reconciled"
                     else:
                         state = "receipt_mismatch"
-                except (WorkflowError, KeyError, TypeError):
-                    state = "target_unavailable"
+                except WorkflowError as exc:
+                    state = "receipt_mismatch" if exc.status in (404, 409) else "target_unavailable"
+                except (KeyError, TypeError):
+                    state = "receipt_mismatch"
             try:
                 source_ids=json.loads(row["source_ids"])
                 if not isinstance(source_ids,list) or any(not isinstance(value,str) for value in source_ids): raise ValueError
