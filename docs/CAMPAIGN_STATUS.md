@@ -4,11 +4,11 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`a2cb6f0` — addresses the independent Issue #8 review: removes Auth's schema-version write; backs up all existing document databases below schema v6 before migration; makes mapped export confirmation admin-only and independent from the mapping editor; checks current target batch and receipt identity during reconciliation; and rejects XLSX source labels that cannot fit their row-provenance suffix before issuing a preview token. The local full test suite, pilots, release check, and browser journey pass. GitHub Actions validation is pending for this pushed checkpoint.
+`ae8ce1f` — completes the independent Issue #8 review fixes from `a2cb6f0` and additionally hides mapped-export confirmation from non-admin UI sessions. The local full test suite, pilots, release check, and Playwright browser journey pass. GitHub Actions validation is pending for this pushed checkpoint.
 
 ## Independent review read
 
-The newest Issue #8 review comment is [6131836536](https://github.com/badmrfrosty313/LedgerBridge/issues/8#issuecomment-6131836536), reviewing `1bf035f`. It identified an Auth schema-version downgrade, inconsistent mapped-export authorization, receipt identity gaps, backup coverage for versioned legacy databases, and a maximum-length XLSX filename confirmation failure. The `a2cb6f0` checkpoint includes code and regression coverage for all five.
+The newest Issue #8 review comment is [6131836536](https://github.com/badmrfrosty313/LedgerBridge/issues/8#issuecomment-6131836536), reviewing `1bf035f`. It identified an Auth schema-version downgrade, inconsistent mapped-export authorization, receipt identity gaps, backup coverage for versioned legacy databases, and a maximum-length XLSX filename confirmation failure. Checkpoints `a2cb6f0` and `ae8ce1f` include code and regression coverage for all five findings.
 
 ## Local verification at this working checkpoint
 
