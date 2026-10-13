@@ -30,7 +30,9 @@ DEFAULT_RULES = {
     "departments": ["Operations", "Administration", "Technology"],
     "approval_limit_cents": 1000000,
     "reconciliation_tolerance_cents": 2,
+    "allow_credits": False,
 }
+DEFAULT_MAPPING_PROFILE = {"profile_version": 1, "account_map": {code: code for code in DEFAULT_RULES["account_codes"]}, "expand_allocations": False}
 FIELDS = {"vendor", "document_number", "date", "subtotal_cents", "tax_cents", "total_cents", "account_code", "department", "notes"}
 MONEY_FIELDS = {"subtotal_cents", "tax_cents", "total_cents"}
 
@@ -81,8 +83,13 @@ def normalize_fields(fields):
 
 
 def validate_rules(rules):
+    legacy_keys = set(DEFAULT_RULES) - {"allow_credits"}
+    if isinstance(rules, dict) and set(rules) == legacy_keys:
+        rules = rules | {"allow_credits": False}
     if not isinstance(rules, dict) or set(rules) != set(DEFAULT_RULES):
         raise WorkflowError("Rules must include exactly the documented configuration fields.")
+    if type(rules["allow_credits"]) is not bool:
+        raise WorkflowError("allow_credits must be true or false.")
     if not isinstance(rules["organization"], str) or not 1 <= len(rules["organization"].strip()) <= 120:
         raise WorkflowError("Organization name is required (maximum 120 characters).")
     if not isinstance(rules["currency"], str) or not re.fullmatch(r"[A-Z]{3}", rules["currency"]):
@@ -109,6 +116,39 @@ def csv_cell(value):
     return text
 
 
+def normalize_allocation_items(items):
+    """Validate allocation inputs without reading or writing a document."""
+    if not isinstance(items, list) or not 1 <= len(items) <= 50:
+        raise WorkflowError("Provide between 1 and 50 allocation destinations.")
+    parsed = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("destination"), str) or item["destination"] != item["destination"].strip() or not re.fullmatch(r"[A-Za-z0-9._ -]{1,120}", item["destination"]):
+            raise WorkflowError("Allocation destination is invalid.")
+        value = item.get("percent")
+        if not isinstance(value, str) or not re.fullmatch(r"\d{1,3}(?:\.\d{1,4})?", value):
+            raise WorkflowError("Percentages must be decimal strings with at most four fractional digits.")
+        basis = int(Decimal(value) * 10000)
+        if basis > 1_000_000:
+            raise WorkflowError("Percentages cannot exceed 100.")
+        parsed.append((item["destination"], basis))
+    if len({key for key, _ in parsed}) != len(parsed):
+        raise WorkflowError("Allocation destinations must be unique.")
+    if sum(value for _, value in parsed) != 1_000_000:
+        raise WorkflowError("Allocation percentages must total exactly 100.0000%.")
+    return parsed
+
+
+def normalize_mapping_profile(profile):
+    if not isinstance(profile, dict) or set(profile) != {"profile_version", "account_map", "expand_allocations"} or type(profile["profile_version"]) is not int or profile["profile_version"] != 1 or type(profile["expand_allocations"]) is not bool:
+        raise WorkflowError("Mapping profile must use the supported version and documented fields.")
+    mapping = profile["account_map"]
+    if not isinstance(mapping, dict) or len(mapping) > 100 or any(not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", key) or not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", value) for key, value in mapping.items()):
+        raise WorkflowError("Account mapping must use supported source codes and safe target codes.")
+    if len(set(mapping.values())) != len(mapping):
+        raise WorkflowError("Target ledger account codes must be unique; resolve collisions before saving.")
+    return profile
+
+
 class Store:
     def __init__(self, path):
         self.path = Path(path)
@@ -117,10 +157,12 @@ class Store:
         if self.path.exists():
             with closing(sqlite3.connect(self.path)) as previous:
                 version = previous.execute("PRAGMA user_version").fetchone()[0]
-                if version > 2:
+                if version > 6:
                     raise WorkflowError("Database was created by a newer LedgerBridge version.")
                 old_schema = previous.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone()
-                if version == 0 and old_schema:
+                # Keep a pre-upgrade snapshot for every supported existing
+                # document database, not just unversioned v0.2.0 files.
+                if version < 6 and old_schema:
                     from .maintenance import backup_database
                     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
                     backup_database(self.path, self.path.with_name(f"{self.path.name}.pre-v2-{stamp}.bak"))
@@ -141,8 +183,27 @@ class Store:
                 CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at TEXT NOT NULL, actor TEXT NOT NULL);
             """)
             db.execute("INSERT OR IGNORE INTO settings VALUES (1, ?, 1)", (json.dumps(DEFAULT_RULES),))
-            if db.execute("PRAGMA user_version").fetchone()[0] == 0:
-                db.execute("PRAGMA user_version=1")
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version == 0: db.execute("PRAGMA user_version=1"); version = 1
+        # Each schema transition is transactional and advances user_version only
+        # after its DDL succeeds. The statements are idempotent for interrupted or
+        # hand-restored databases and never rebuild existing financial tables.
+        migrations = {
+            2: ("CREATE TABLE IF NOT EXISTS allocations (document_id TEXT NOT NULL, destination TEXT NOT NULL, percent TEXT NOT NULL, cents INTEGER NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(document_id,destination))",),
+            3: ("CREATE INDEX IF NOT EXISTS allocations_by_document ON allocations(document_id)",),
+            4: ("CREATE TABLE IF NOT EXISTS allocation_state (document_id TEXT PRIMARY KEY, review_required INTEGER NOT NULL DEFAULT 0)",),
+            5: ("CREATE TABLE IF NOT EXISTS allocation_templates (name TEXT PRIMARY KEY, items TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)",),
+            6: (
+                "CREATE TABLE IF NOT EXISTS mapping_profiles (id INTEGER PRIMARY KEY CHECK(id=1), profile TEXT NOT NULL, revision INTEGER NOT NULL, actor TEXT NOT NULL, updated_at TEXT NOT NULL)",
+                "CREATE TABLE IF NOT EXISTS mapping_export_meta (export_id TEXT PRIMARY KEY, profile_revision INTEGER NOT NULL, profile_version INTEGER NOT NULL, source_ids TEXT NOT NULL, source_total_cents INTEGER NOT NULL, mapped_total_cents INTEGER NOT NULL, content_hash TEXT NOT NULL)",
+            ),
+        }
+        for target in range(version + 1, 7):
+            with self.connect(write=True) as db:
+                for statement in migrations[target]: db.execute(statement)
+                if target == 6:
+                    db.execute("INSERT OR IGNORE INTO mapping_profiles VALUES (1,?,?,?,?)", (json.dumps(DEFAULT_MAPPING_PROFILE),1,"system",now()))
+                db.execute(f"PRAGMA user_version={target}")
         if os.name == "posix" and self.path.exists():
             os.chmod(self.path, 0o600)
 
@@ -172,7 +233,7 @@ class Store:
             with self.connect() as db:
                 return self.rules(db)
         row = db.execute("SELECT * FROM settings WHERE id=1").fetchone()
-        return {"rules": json.loads(row["rules"]), "revision": row["revision"]}
+        return {"rules": validate_rules(json.loads(row["rules"])), "revision": row["revision"]}
 
     def get(self, db, document_id):
         row = db.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
@@ -190,9 +251,10 @@ class Store:
             if fields.get(key) is None or fields.get(key) == "":
                 add("missing_" + key, f"Required field missing: {key.replace('_cents', '').replace('_', ' ')}.")
         if fields.get("total_cents") is not None:
-            if fields["total_cents"] <= 0:
-                add("nonpositive_total", "Total must be greater than zero. Credit notes need a separate workflow.")
-            if fields["total_cents"] > rules["approval_limit_cents"]:
+            total = fields["total_cents"]
+            if total == 0 or (total < 0 and not rules.get("allow_credits", False)):
+                add("nonpositive_total", "Zero totals are invalid and credit notes are disabled by current business rules.")
+            if abs(total) > rules["approval_limit_cents"]:
                 add("approval_limit", "Amount exceeds the configured approval limit.")
         if all(fields.get(k) is not None for k in MONEY_FIELDS):
             if abs(fields["subtotal_cents"] + fields["tax_cents"] - fields["total_cents"]) > rules["reconciliation_tolerance_cents"]:
@@ -201,6 +263,24 @@ class Store:
             if fields.get(key) and rules[config] and fields[key] not in rules[config]:
                 add("invalid_" + key, f"{key.replace('_', ' ').title()} is not in the configured list.")
         vendor = (fields.get("vendor") or "").strip().casefold()
+        allocations = [dict(item) for item in db.execute("SELECT destination,percent,cents FROM allocations WHERE document_id=?", (row["id"],))]
+        pending = db.execute("SELECT review_required FROM allocation_state WHERE document_id=?", (row["id"],)).fetchone()
+        if pending and pending["review_required"]:
+            add("allocation_review_required", "The document total changed after allocation. Save a newly reviewed allocation before approval.")
+        if allocations:
+            try:
+                if any(type(item["cents"]) is not int for item in allocations):
+                    raise WorkflowError("Saved allocation cents must be integer minor units.")
+                parsed = normalize_allocation_items([{"destination": item["destination"], "percent": item["percent"]} for item in allocations])
+                if sum(item["cents"] for item in allocations) != fields.get("total_cents"):
+                    add("allocation_stale", "Saved allocations do not reconcile to the current document total. Preview and save them again.")
+                expected = self._allocation_preview_for_total(fields.get("total_cents"), allocations)
+                actual = sorted((item["destination"], Decimal(item["percent"]), item["cents"]) for item in allocations)
+                calculated = sorted((item["destination"], Decimal(item["percent"]), item["cents"]) for item in expected["items"])
+                if len(parsed) != len(allocations) or actual != calculated:
+                    add("allocation_corrupt", "Saved allocations differ from the deterministic percentage calculation.")
+            except WorkflowError as exc:
+                add("allocation_invalid", str(exc))
         number = (fields.get("document_number") or "").strip().casefold()
         if vendor:
             for other in db.execute("SELECT id, fields FROM documents WHERE id != ? AND status != 'rejected'", (row["id"],)):
@@ -219,6 +299,7 @@ class Store:
             result[key] = json.loads(result[key])
         result["issues"] = self.issues(db, row) if row["status"] != "exported" else []
         result["ready"] = not result["issues"] and row["status"] == "draft"
+        result["allocations"] = [dict(item) for item in db.execute("SELECT destination,percent,cents,revision FROM allocations WHERE document_id=? ORDER BY destination", (row["id"],))]
         return result
 
     def list_documents(self):
@@ -308,10 +389,155 @@ class Store:
                 raise WorkflowError("Only draft or approved records can be edited.", 409)
             before = json.loads(row["fields"])
             after = before | fields
+            total_changed = "total_cents" in fields and fields["total_cents"] != before.get("total_cents")
+            if total_changed and db.execute("SELECT 1 FROM allocations WHERE document_id=?", (document_id,)).fetchone():
+                db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
+                db.execute("INSERT INTO allocation_state(document_id,review_required) VALUES (?,1) ON CONFLICT(document_id) DO UPDATE SET review_required=1", (document_id,))
+                self.audit(db, document_id, "allocations_invalidated", actor, {"reason":"Document total changed", "before_total_cents":before.get("total_cents"), "after_total_cents":after.get("total_cents")})
             db.execute("UPDATE documents SET fields=?, status='draft', revision=revision+1, updated_at=? WHERE id=?", (json.dumps(after), now(), document_id))
             self.audit(db, document_id, "edited", actor, {"before": before, "after": after, "previous_status": row["status"]})
             self.invalidate_approvals(db)
         return self.detail(document_id)
+
+    @staticmethod
+    def _allocation_preview_for_total(total, items):
+        if type(total) is not int: raise WorkflowError("Set a valid document total before allocating.", 409)
+        parsed = normalize_allocation_items(items)
+        absolute = abs(total); shares = [(key, absolute * basis // 1_000_000, (absolute * basis) % 1_000_000, basis) for key, basis in parsed]
+        remaining = absolute - sum(value for _, value, _, _ in shares)
+        winners = {key for key, _, _, _ in sorted(shares, key=lambda item: (-item[2], item[0]))[:remaining]}
+        result_items = [{"destination": key, "percent": f"{Decimal(basis)/10000:.4f}", "cents": (-value if total < 0 else value) + (-1 if total < 0 and key in winners else 1 if total >= 0 and key in winners else 0)} for key, value, _, basis in shares]
+        allocated = sum(item["cents"] for item in result_items)
+        return {"source_cents": total, "allocated_cents": allocated, "difference_cents": total - allocated, "items": result_items}
+
+    def allocation_preview(self, document_id, items):
+        with self.connect() as db:
+            row = self.get(db, document_id)
+            total = json.loads(row["fields"]).get("total_cents")
+        return {"document_id": document_id} | self._allocation_preview_for_total(total, items)
+
+    def save_allocations(self, document_id, items, revision, actor):
+        preview = self.allocation_preview(document_id, items)
+        with self.connect(write=True) as db:
+            row = self.get(db, document_id); self.check_revision(row, revision)
+            if row["status"] not in ("draft", "approved"): raise WorkflowError("Reopen a rejected record before changing allocations; exported records are immutable.", 409)
+            db.execute("DELETE FROM allocations WHERE document_id=?", (document_id,))
+            for item in preview["items"]: db.execute("INSERT INTO allocations VALUES (?,?,?,?,?)", (document_id,item["destination"],item["percent"],item["cents"],revision + 1))
+            db.execute("INSERT INTO allocation_state(document_id,review_required) VALUES (?,0) ON CONFLICT(document_id) DO UPDATE SET review_required=0", (document_id,))
+            db.execute("UPDATE documents SET status='draft', revision=revision+1, updated_at=? WHERE id=?", (now(), document_id))
+            self.audit(db, document_id, "allocations_saved", actor, preview)
+        return self.detail(document_id)
+
+    def allocation_templates(self):
+        with self.connect() as db:
+            templates = []
+            for row in db.execute("SELECT * FROM allocation_templates ORDER BY name"):
+                try:
+                    items = json.loads(row["items"])
+                    normalize_allocation_items(items)
+                except (TypeError, ValueError, WorkflowError, json.JSONDecodeError):
+                    raise WorkflowError(f"Stored allocation template '{row['name']}' is invalid. An administrator must replace it.", 409) from None
+                templates.append(dict(row) | {"items": items})
+            return templates
+
+    def save_allocation_template(self, name, items, actor, revision=None):
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._ -]{1,80}", name): raise WorkflowError("Template name is invalid.")
+        normalize_allocation_items(items)
+        with self.connect(write=True) as db:
+            existing = db.execute("SELECT revision FROM allocation_templates WHERE name=?", (name,)).fetchone()
+            if existing and (type(revision) is not int or revision != existing["revision"]):
+                raise WorkflowError("Template changed. Refresh before updating.", 409)
+            if not existing and revision is not None:
+                raise WorkflowError("Template does not exist; create it without a revision.", 409)
+            revision = 1 if not existing else existing["revision"] + 1
+            db.execute("INSERT INTO allocation_templates VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET items=excluded.items,revision=excluded.revision,actor=excluded.actor,created_at=excluded.created_at", (name, json.dumps(items), revision, actor, now()))
+            self.audit(db, None, "allocation_template_saved", actor, {"name": name, "items": items, "revision": revision})
+        return self.allocation_templates()
+
+    def mapping_profile(self, db=None):
+        if db is None:
+            with self.connect() as db: return self.mapping_profile(db)
+        row=db.execute("SELECT profile,revision,actor,updated_at FROM mapping_profiles WHERE id=1").fetchone()
+        if row is None: raise WorkflowError("Mapping profile is unavailable.",500)
+        try:
+            profile=json.loads(row["profile"])
+            normalize_mapping_profile(profile)
+            if type(row["revision"]) is not int or row["revision"] < 1 or not isinstance(row["actor"],str): raise WorkflowError("Stored mapping profile metadata is invalid.")
+        except (TypeError, ValueError, WorkflowError, json.JSONDecodeError):
+            raise WorkflowError("Stored mapping profile is invalid. An administrator must repair it before export.",409) from None
+        return {"profile":profile,"revision":row["revision"],"actor":row["actor"],"updated_at":row["updated_at"]}
+
+    def save_mapping_profile(self, profile, revision, actor):
+        normalize_mapping_profile(profile)
+        with self.connect(write=True) as db:
+            supported_sources=set(self.rules(db)["rules"]["account_codes"])
+            unsupported=set(profile["account_map"])-supported_sources
+            if unsupported:
+                raise WorkflowError("Mapping uses unsupported source account codes: "+", ".join(sorted(unsupported)))
+            current=self.mapping_profile(db)
+            if type(revision) is not int or revision!=current["revision"]: raise WorkflowError("Mapping profile changed. Refresh before saving.",409)
+            db.execute("UPDATE mapping_profiles SET profile=?,revision=revision+1,actor=?,updated_at=? WHERE id=1",(json.dumps(profile,sort_keys=True),actor,now()))
+            self.audit(db,None,"mapping_profile_updated",actor,{"before":current["profile"],"after":profile,"revision":revision+1})
+        return self.mapping_profile()
+
+    def _mapping_dry_run(self, db):
+        profile_record=self.mapping_profile(db); profile=profile_record["profile"]; rules=self.rules(db)["rules"]
+        documents=db.execute("SELECT * FROM documents WHERE status='approved' ORDER BY created_at,id").fetchall()
+        rows=[]; rejected=[]; source_total=0; mapped_total=0; source_ids=[]
+        for doc in documents:
+            fields=json.loads(doc["fields"]); problems=self.issues(db,doc,rules)
+            if problems:
+                rejected.append({"source_id":doc["id"],"reason":" ".join(issue["message"] for issue in problems)}); continue
+            account=profile["account_map"].get(fields.get("account_code"))
+            if not account:
+                rejected.append({"source_id":doc["id"],"reason":f"No target account mapping for source code {fields.get('account_code')}."}); continue
+            source_ids.append(doc["id"]); source_total+=fields["total_cents"]
+            allocations=[dict(r) for r in db.execute("SELECT destination,percent,cents FROM allocations WHERE document_id=? ORDER BY destination",(doc["id"],))]
+            if profile["expand_allocations"] and allocations:
+                splits=[(a["destination"],a["cents"]) for a in allocations if a["cents"] != 0]
+            else: splits=[("",fields["total_cents"])]
+            if not splits:
+                rejected.append({"source_id":doc["id"],"reason":"Allocation produces no non-zero posting rows."}); source_total-=fields["total_cents"]; source_ids.remove(doc["id"]); continue
+            for destination,amount in splits:
+                material=f"{doc['id']}:{destination}:{len(rows)}".encode()
+                record_id=hashlib.sha256(material).hexdigest()[:32]
+                rows.append({"record_id":record_id,"source_id":doc["id"],"document_number":fields.get("document_number") or "","vendor":fields.get("vendor") or "","date":fields.get("date") or "","amount_cents":amount,"total":f"{Decimal(amount)/100:.2f}","currency":rules["currency"],"account_code":account,"department":fields.get("department") or "","destination":destination,"notes":fields.get("notes") or ""})
+                mapped_total+=amount
+        difference=source_total-mapped_total
+        snapshot={"profile_revision":profile_record["revision"],"profile_version":profile["profile_version"],"source_ids":source_ids,"rows":rows,"rejected":rejected,"source_total_cents":source_total,"mapped_total_cents":mapped_total,"difference_cents":difference}
+        preview_id=hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        return snapshot|{"preview_id":preview_id}
+
+    def mapping_dry_run(self):
+        with self.connect() as db: return self._mapping_dry_run(db)
+
+    def confirm_mapping_export(self, preview_id, revision, actor):
+        if not isinstance(preview_id,str) or not re.fullmatch(r"[a-f0-9]{64}",preview_id): raise WorkflowError("Run a fresh mapping preview before confirming.",409)
+        with self.connect(write=True) as db:
+            current=self._mapping_dry_run(db)
+            if type(revision) is not int or current["profile_revision"]!=revision or current["preview_id"]!=preview_id:
+                raise WorkflowError("Mapping preview is stale. Re-run the dry-run before confirming.",409)
+            if current["rejected"]: raise WorkflowError("Resolve mapping exceptions before creating an export snapshot.",409)
+            if not current["rows"]: raise WorkflowError("No approved records are available for mapped export.",409)
+            profile_actor=self.mapping_profile(db)["actor"]
+            if profile_actor!="system" and profile_actor==actor:
+                raise WorkflowError("A different administrator must confirm the mapping export than the administrator who last changed its profile.",409)
+            out=io.StringIO(newline=""); columns=("record_id","source_id","document_number","vendor","date","amount_cents","total","currency","account_code","department","destination","notes")
+            writer=csv.DictWriter(out,fieldnames=columns); writer.writeheader()
+            # These two fields are canonical numeric representations; escaping
+            # a negative sign would change their financial meaning. All other
+            # untrusted text is neutralized for spreadsheet consumers.
+            safe_rows=({key:(value if key in {"total","amount_cents"} else csv_cell(value)) for key,value in row.items()} for row in current["rows"])
+            writer.writerows(safe_rows)
+            export_id=uuid.uuid4().hex; created=now(); content=out.getvalue()
+            db.execute("INSERT INTO exports VALUES (?,?,?,?)",(export_id,content,created,actor))
+            db.execute("INSERT INTO mapping_export_meta VALUES (?,?,?,?,?,?,?)",(export_id,current["profile_revision"],current["profile_version"],json.dumps(current["source_ids"]),current["source_total_cents"],current["mapped_total_cents"],hashlib.sha256(content.encode()).hexdigest()))
+            for source_id in current["source_ids"]:
+                row=self.get(db,source_id); fields=json.loads(row["fields"])
+                db.execute("UPDATE documents SET status='exported',export_id=?,revision=revision+1,updated_at=? WHERE id=?",(export_id,created,source_id))
+                self.audit(db,source_id,"exported_mapped",actor,{"export_id":export_id,"mapping_profile_revision":current["profile_revision"],"mapping_profile_version":current["profile_version"],"fields":fields})
+            self.audit(db,None,"mapped_export_created",actor,{"export_id":export_id,"preview_id":preview_id,"profile_revision":current["profile_revision"],"source_ids":current["source_ids"],"source_total_cents":current["source_total_cents"],"mapped_total_cents":current["mapped_total_cents"],"difference_cents":current["difference_cents"]})
+        return {"id":export_id,"record_count":len(current["rows"]),"download_url":f"/api/exports/{export_id}/download","profile_version":current["profile_version"],"source_total_cents":current["source_total_cents"],"mapped_total_cents":current["mapped_total_cents"],"difference_cents":current["difference_cents"]}
 
     def check_revision(self, row, revision):
         if type(revision) is not int or row["revision"] != revision:
@@ -324,7 +550,7 @@ class Store:
             if action == "approve":
                 if row["status"] != "draft":
                     raise WorkflowError("Only draft records can be approved.", 409)
-                if independent and db.execute("SELECT 1 FROM events WHERE document_id=? AND action IN ('imported','edited') AND actor=? LIMIT 1", (document_id, actor)).fetchone():
+                if independent and db.execute("SELECT 1 FROM events WHERE document_id=? AND action IN ('imported','edited','allocations_saved') AND actor=? LIMIT 1", (document_id, actor)).fetchone():
                     raise WorkflowError("A different reviewer must approve a record you imported or corrected.", 409)
                 issues = self.issues(db, row)
                 if issues:

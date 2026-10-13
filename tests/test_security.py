@@ -6,6 +6,7 @@ import time
 import unittest
 from contextlib import closing
 from pathlib import Path
+from openpyxl import Workbook
 
 from ledgerbridge.auth import Auth
 from ledgerbridge.core import Store, WorkflowError
@@ -115,6 +116,89 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(approved["status"], 200)
         self.assertEqual(self.store.detail(doc_id)["events"][0]["actor"], "reviewer-two")
 
+    def test_allocation_template_routes_require_roles_and_csrf(self):
+        admin_cookie, admin_csrf = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        reviewer_cookie, reviewer_csrf = self.login("reviewer", "ReviewerPasswordForTests2026!")
+        viewer_cookie, viewer_csrf = self.login("viewer", "AnotherExamplePasswordForTests2026!")
+        items = [{"destination":"Fund A","percent":"60"},{"destination":"Fund B","percent":"40"}]
+        self.assertEqual(request(self.app,"POST","/api/allocation-templates",{"name":"Synthetic","items":items},cookie=admin_cookie)["status"],403)
+        created=request(self.app,"POST","/api/allocation-templates",{"name":"Synthetic","items":items},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(created["status"],201)
+        self.assertEqual(request(self.app,"GET","/api/allocation-templates",cookie=viewer_cookie)["status"],403)
+        self.assertEqual(request(self.app,"GET","/api/allocation-templates",cookie=reviewer_cookie)["status"],200)
+        imported=request(self.app,"POST","/api/import/csv",{"text":"vendor,date,total,account_code\nTEMPLATE TEST,2026-10-01,100.00,5100"},cookie=admin_cookie,csrf=admin_csrf)
+        doc_id=json.loads(imported["body"])["records"][0]["id"]
+        preview=request(self.app,"POST",f"/api/documents/{doc_id}/allocations/template-preview",{"name":"Synthetic"},cookie=reviewer_cookie,csrf=reviewer_csrf)
+        self.assertEqual(preview["status"],200)
+        self.assertEqual(len(self.store.detail(doc_id)["allocations"]),0)
+        self.assertEqual(request(self.app,"POST",f"/api/documents/{doc_id}/allocations/template-preview",{"name":"Synthetic"},cookie=viewer_cookie,csrf=viewer_csrf)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/allocation-templates",{"name":"Bad","items":[]},cookie=admin_cookie,csrf=admin_csrf)["status"],400)
+        self.assertEqual([item["name"] for item in self.store.allocation_templates()],["Synthetic"])
+
+    def test_xlsx_preview_owner_is_checked_before_single_use_consumption(self):
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        admin_cookie, admin_csrf = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
+        reviewer_cookie, reviewer_csrf = self.login("reviewer", "ReviewerPasswordForTests2026!")
+        book=Workbook(); sheet=book.active
+        sheet.append(["vendor","date","total","account_code"]); sheet.append(["SYNTHETIC TOKEN TEST","2026-10-12","9.99","5100"])
+        output=io.BytesIO(); book.save(output)
+        import base64
+        preview=request(self.app,"POST","/api/import/xlsx/preview",{"content_base64":base64.b64encode(output.getvalue()).decode(),"source_name":"synthetic.xlsx"},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(preview["status"],200); token=json.loads(preview["body"])["preview_token"]
+        stolen=request(self.app,"POST","/api/import/xlsx/confirm",{"preview_token":token},cookie=reviewer_cookie,csrf=reviewer_csrf)
+        self.assertEqual(stolen["status"],409)
+        owned=request(self.app,"POST","/api/import/xlsx/confirm",{"preview_token":token},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(owned["status"],201)
+        replay=request(self.app,"POST","/api/import/xlsx/confirm",{"preview_token":token},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(replay["status"],409)
+        self.assertEqual(len(self.store.list_documents()),1)
+
+    def test_mapping_profile_and_dry_run_routes_enforce_roles_and_csrf(self):
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        admin_cookie,admin_csrf=self.login("admin","ThisIsAnExamplePasswordForTests2026!")
+        reviewer_cookie,reviewer_csrf=self.login("reviewer","ReviewerPasswordForTests2026!")
+        viewer_cookie,viewer_csrf=self.login("viewer","AnotherExamplePasswordForTests2026!")
+        self.assertEqual(request(self.app,"GET","/api/mapping-profile",cookie=viewer_cookie)["status"],403)
+        self.assertEqual(request(self.app,"GET","/api/mapping-profile",cookie=reviewer_cookie)["status"],200)
+        self.assertEqual(request(self.app,"GET","/api/mapping/dry-run",cookie=reviewer_cookie)["status"],200)
+        self.assertEqual(request(self.app,"GET","/api/mapping/dry-run",cookie=viewer_cookie)["status"],403)
+        profile=self.store.mapping_profile()
+        self.assertEqual(request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie)["status"],403)
+        saved=request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(saved["status"],200)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",{"preview_id":"0"*64,"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],403)
+        rules=self.store.rules()
+        enabled=rules["rules"]|{"allow_credits":True}
+        self.assertEqual(request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie)["status"],403)
+        self.assertEqual(request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=viewer_cookie,csrf=viewer_csrf)["status"],403)
+        changed=request(self.app,"PATCH","/api/rules",{"rules":enabled,"revision":rules["revision"]},cookie=admin_cookie,csrf=admin_csrf)
+        self.assertEqual(changed["status"],200)
+        self.assertTrue(json.loads(changed["body"])["rules"]["allow_credits"])
+
+    def test_mapped_export_requires_an_independent_administrator(self):
+        self.auth.add_user("reviewer", "ReviewerPasswordForTests2026!", "reviewer")
+        self.auth.add_user("admin-two", "SecondAdminPasswordForTests2026!", "admin")
+        admin_cookie, admin_csrf = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
+        reviewer_cookie, reviewer_csrf = self.login("reviewer", "ReviewerPasswordForTests2026!")
+        viewer_cookie, viewer_csrf = self.login("viewer", "AnotherExamplePasswordForTests2026!")
+        second_cookie, second_csrf = self.login("admin-two", "SecondAdminPasswordForTests2026!")
+        imported = request(self.app,"POST","/api/import/csv",{"text":"vendor,date,total,account_code\nSYNTHETIC EXPORT,2026-10-12,10.00,5100"},cookie=admin_cookie,csrf=admin_csrf)
+        document_id=json.loads(imported["body"])["records"][0]["id"]
+        approved=request(self.app,"POST",f"/api/documents/{document_id}/approve",{"revision":1},cookie=reviewer_cookie,csrf=reviewer_csrf)
+        self.assertEqual(approved["status"],200)
+        profile=self.store.mapping_profile()
+        self.assertEqual(request(self.app,"POST","/api/mapping/profile",{"profile":profile["profile"],"revision":profile["revision"]},cookie=admin_cookie,csrf=admin_csrf)["status"],200)
+        preview=self.store.mapping_dry_run()
+        body={"preview_id":preview["preview_id"],"revision":preview["profile_revision"]}
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=viewer_cookie,csrf=viewer_csrf)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=reviewer_cookie,csrf=reviewer_csrf)["status"],403)
+        self.assertEqual(request(self.app,"POST","/api/mapping/exports",body,cookie=admin_cookie,csrf=admin_csrf)["status"],409)
+        exported=request(self.app,"POST","/api/mapping/exports",body,cookie=second_cookie,csrf=second_csrf)
+        self.assertEqual(exported["status"],201,exported["body"])
+        self.assertEqual(self.store.detail(document_id)["status"],"exported")
+
     def test_session_expires_and_raw_token_is_never_stored(self):
         cookie, _ = self.login("admin", "ThisIsAnExamplePasswordForTests2026!")
         token = cookie.split("=", 1)[1]
@@ -128,7 +212,12 @@ class SecurityTests(unittest.TestCase):
         doc_id = self.store.import_csv("vendor,date,total,account_code\nAcme,2026-10-01,42.00,5100", "demo", "admin")[0]["id"]
         destination = Path(self.temp.name) / "backups" / "snapshot.sqlite3"
         backup_database(self.path, destination)
+        with closing(sqlite3.connect(destination)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
         restored = Store(destination)
+        Auth(restored)
+        with closing(sqlite3.connect(destination)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
         self.assertEqual(restored.detail(doc_id)["fields"]["total_cents"], 4200)
         self.assertTrue(Auth(restored).has_users())
         with self.assertRaises(ValueError):
@@ -137,11 +226,46 @@ class SecurityTests(unittest.TestCase):
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
     def test_old_database_auto_backup_before_schema_upgrade(self):
+        doc_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC LEGACY,2026-10-12,1.00,5100","legacy.csv","admin")[0]["id"]
         with closing(sqlite3.connect(self.path)) as db:
-            db.execute("PRAGMA user_version=0")
+            db.execute("DROP TABLE mapping_export_meta")
+            db.execute("DROP TABLE mapping_profiles")
+            db.execute("DROP TABLE allocation_templates")
+            db.execute("DROP TABLE allocation_state")
+            db.execute("DROP INDEX allocations_by_document")
+            db.execute("PRAGMA user_version=2")
+            db.commit()
         migrated = Store(self.path)
         self.assertEqual(migrated.rules()["revision"], 1)
+        self.assertEqual(migrated.detail(doc_id)["fields"]["total_cents"],100)
         self.assertEqual(len(list(self.path.parent.glob("*.pre-v2-*.bak"))), 1)
+        self.assertEqual(Auth(migrated).has_users(), True)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        restarted=Store(self.path); Auth(restarted); Store(self.path)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        backup=next(self.path.parent.glob("*.pre-v2-*.bak"))
+        restored=Store(backup); Auth(restored); Store(backup)
+        with closing(sqlite3.connect(backup)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+            self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mapping_export_meta'").fetchone())
+
+    def test_auth_initialization_never_changes_store_schema_version(self):
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        Auth(self.store); Auth(Store(self.path))
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+    def test_newer_schema_is_rejected_without_rewriting_existing_database(self):
+        doc_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC FUTURE DB,2026-10-12,1.00,5100","future.csv","admin")[0]["id"]
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute("PRAGMA user_version=7")
+        with self.assertRaises(WorkflowError): Store(self.path)
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],7)
+            fields=json.loads(db.execute("SELECT fields FROM documents WHERE id=?",(doc_id,)).fetchone()[0])
+            self.assertEqual(fields["total_cents"],100)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ python -m ledgerbridge.admin set-password analyst
 python -m ledgerbridge.admin disable-user analyst
 ```
 
-Viewers can inspect data; reviewers can import, correct, approve, reject, and reopen; admins can also configure rules and export. Password changes and deactivations revoke sessions. The last active admin cannot be disabled. Admin CLI changes are recorded in the activity log as local operator actions. Protect host access to these commands.
+Viewers can inspect data; reviewers can import, correct, approve, reject, and reopen; admins can also configure rules and create conventional or mapped exports. Mapped export confirmation requires an administrator different from the last administrator who changed the mapping profile. Password changes and deactivations revoke sessions. The last active admin cannot be disabled. Admin CLI changes are recorded in the activity log as local operator actions. Protect host access to these commands.
 
 ## Backups and recovery
 
@@ -48,7 +48,7 @@ Back up live SQLite using its online backup API; copying only the `.sqlite3` fil
 python -m ledgerbridge.maintenance backup --db data/ledgerbridge.sqlite3 --out /secure-backups/ledgerbridge-2026-10-08.sqlite3
 ```
 
-The command refuses to overwrite a snapshot and verifies `PRAGMA integrity_check`. Schedule it with your job scheduler, store copies off-host with access control, and test recovery. An upgrade from an unversioned database also creates a `pre-v2` snapshot beside the original before changing the schema. Move those snapshots to protected backup storage.
+The command refuses to overwrite a snapshot and verifies `PRAGMA integrity_check`. Schedule it with your job scheduler, store copies off-host with access control, and test recovery. An upgrade of any supported existing database below schema version 6 creates a `pre-v2` snapshot beside the original before changing the schema. Move those snapshots to protected backup storage.
 
 To restore, stop the app, move the current database and its `-wal`/`-shm` sidecars together to a separate recovery directory, and verify that no old sidecars remain at the database path. Place a verified snapshot at the configured database path with the service account's ownership and restricted permissions, then restart. Confirm document counts, user login, an existing export download, and the activity log. Practice this with a nonproduction database first.
 

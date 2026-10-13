@@ -1,10 +1,13 @@
 import http.client
+import base64
+import io
 import json
 import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from openpyxl import Workbook
 
 from ledgerbridge.core import Store
 from ledgerbridge.server import handler_for
@@ -64,6 +67,69 @@ class ApiTests(unittest.TestCase):
             self.assertIn("error", json.loads(data))
         status, _, _ = self.request("GET", "/../../etc/passwd")
         self.assertEqual(status, 404)
+
+    def test_excel_preview_requires_confirmation_before_creating_drafts(self):
+        book = Workbook(); sheet = book.active
+        sheet.append(["vendor", "date", "total", "account_code"])
+        sheet.append(["SYNTHETIC EXCEL SUPPLIES", "2026-10-01", "42.00", "5100"])
+        output = io.BytesIO(); book.save(output)
+        payload = {"content_base64": base64.b64encode(output.getvalue()).decode(), "source_name": "synthetic.xlsx", "actor": "Tester"}
+        status, _, body = self.request("POST", "/api/import/xlsx/preview", payload)
+        self.assertEqual(status, 200)
+        preview = json.loads(body)
+        self.assertTrue(preview["valid"])
+        self.assertEqual(json.loads(self.request("GET", "/api/documents")[2])["documents"], [])
+        status, _, body = self.request("POST", "/api/import/xlsx/confirm", {"preview_token": preview["preview_token"], "actor": "Tester"})
+        self.assertEqual(status, 201)
+        self.assertEqual(len(json.loads(body)["records"]), 1)
+
+    def test_xlsx_filename_bound_is_checked_before_issuing_a_one_use_preview(self):
+        book=Workbook(); sheet=book.active
+        sheet.append(["vendor","date","total"]); sheet.append(["SYNTHETIC NAME BOUNDARY","2026-10-12","1.00"])
+        output=io.BytesIO(); book.save(output); encoded=base64.b64encode(output.getvalue()).decode()
+        too_long="x"*195+".xlsx"
+        status,_,body=self.request("POST","/api/import/xlsx/preview",{"content_base64":encoded,"source_name":too_long})
+        self.assertEqual(status,400); self.assertIn("too long",json.loads(body)["error"])
+        accepted="x"*187+".xlsx" # room for the row 2 provenance suffix
+        status,_,body=self.request("POST","/api/import/xlsx/preview",{"content_base64":encoded,"source_name":accepted,"actor":"Tester"})
+        self.assertEqual(status,200,body)
+        token=json.loads(body)["preview_token"]
+        status,_,body=self.request("POST","/api/import/xlsx/confirm",{"preview_token":token,"actor":"Tester"})
+        self.assertEqual(status,201,body)
+        imported_id=json.loads(body)["records"][0]["id"]
+        status,_,body=self.request("GET","/api/documents")
+        imported=next(row for row in json.loads(body)["documents"] if row["id"]==imported_id)
+        self.assertEqual(len(imported["source_name"]),200)
+
+    def test_excel_preview_rejects_malformed_base64_and_confirmation_is_single_use_under_race(self):
+        for encoded in ("%%%", "YWJj$", ""):
+            status, _, body = self.request("POST", "/api/import/xlsx/preview", {"content_base64": encoded, "source_name": "synthetic.xlsx", "actor": "Tester"})
+            self.assertEqual(status, 400)
+            self.assertIn("error", json.loads(body))
+        book=Workbook(); sheet=book.active
+        sheet.append(["vendor", "date", "total", "account_code"])
+        sheet.append(["SYNTHETIC RACE", "2026-10-01", "8.25", "5100"])
+        output=io.BytesIO(); book.save(output)
+        status, _, body=self.request("POST", "/api/import/xlsx/preview", {"content_base64":base64.b64encode(output.getvalue()).decode(),"source_name":"synthetic.xlsx","actor":"Tester"})
+        self.assertEqual(status,200); token=json.loads(body)["preview_token"]
+        barrier=threading.Barrier(2); outcomes=[]
+        def confirm():
+            barrier.wait()
+            outcomes.append(self.request("POST","/api/import/xlsx/confirm",{"preview_token":token,"actor":"Tester"})[0])
+        threads=[threading.Thread(target=confirm) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertCountEqual(outcomes,[201,409])
+        self.assertEqual(len(json.loads(self.request("GET","/api/documents")[2])["documents"]),1)
+
+    def test_allocation_preview_and_confirm_require_a_current_revision(self):
+        status, _, body = self.request("POST", "/api/import/csv", {"text": "vendor,date,total,account_code\nSYNTHETIC,2026-10-01,0.01,5100", "actor": "Tester"})
+        document_id = json.loads(body)["records"][0]["id"]
+        status, _, body = self.request("POST", f"/api/documents/{document_id}/allocations/preview", {"items": [{"destination":"Fund A","percent":"50"},{"destination":"Fund B","percent":"50"}], "actor":"Tester"})
+        self.assertEqual(status, 200); self.assertEqual(sum(item["cents"] for item in json.loads(body)["items"]), 1)
+        revision = json.loads(self.request("GET", "/api/documents/" + document_id)[2])["revision"]
+        status, _, body = self.request("POST", f"/api/documents/{document_id}/allocations/confirm", {"items": [{"destination":"Fund A","percent":"50"},{"destination":"Fund B","percent":"50"}], "revision": revision, "actor":"Tester"})
+        self.assertEqual(status, 200); self.assertEqual(len(json.loads(body)["allocations"]), 2)
 
 
 if __name__ == "__main__":

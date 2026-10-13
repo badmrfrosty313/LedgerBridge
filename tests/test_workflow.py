@@ -108,6 +108,20 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(WorkflowError):
             self.store.update_rules(rules, settings["revision"], "Admin")
 
+    def test_legacy_rules_default_to_credits_disabled_and_allow_explicit_opt_in(self):
+        document_id=self.store.import_csv("vendor,date,total,account_code\nSYNTHETIC CREDIT,2026-10-12,-10.01,5100","credit.csv","intake")[0]["id"]
+        current=self.store.rules()
+        legacy={key:value for key,value in current["rules"].items() if key!="allow_credits"}
+        with self.store.connect(write=True) as db:
+            db.execute("UPDATE settings SET rules=? WHERE id=1",(json.dumps(legacy),))
+        refreshed=self.store.rules()
+        self.assertFalse(refreshed["rules"]["allow_credits"])
+        self.assertIn("nonpositive_total",[issue["code"] for issue in self.store.detail(document_id)["issues"]])
+        changed=refreshed["rules"]|{"allow_credits":True}
+        saved=self.store.update_rules(changed,refreshed["revision"],"admin")
+        self.assertTrue(saved["rules"]["allow_credits"])
+        self.assertNotIn("nonpositive_total",[issue["code"] for issue in self.store.detail(document_id)["issues"]])
+
     def test_csv_batch_rolls_back_on_invalid_row(self):
         text = "vendor,date,total,account_code\nVendor A,2026-10-01,100.00,5100\nVendor B,2026-02-30,200.00,5100\n"
         with self.assertRaises(WorkflowError):
