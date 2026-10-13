@@ -4,20 +4,20 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`3bec278` — prevents reselecting the active document from asynchronously rebuilding its form, a race exposed by CI's browser failure annotation; the browser helper now waits for a newly selected row before editing. GitHub Actions run [38298874976](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298874976) passed the complete matrix, browser journey, and production startup check for this checkpoint.
+`a2cb6f0` — addresses the independent Issue #8 review: removes Auth's schema-version write; backs up all existing document databases below schema v6 before migration; makes mapped export confirmation admin-only and independent from the mapping editor; checks current target batch and receipt identity during reconciliation; and rejects XLSX source labels that cannot fit their row-provenance suffix before issuing a preview token. The local full test suite, pilots, release check, and browser journey pass. GitHub Actions validation is pending for this pushed checkpoint.
 
-## Issue #5 review read
+## Independent review read
 
-The latest public Issue #5 architecture review comment is [6130205816](https://github.com/badmrfrosty313/LedgerBridge/issues/5#issuecomment-6130205816), reviewing `197c9df` and `33c6667`. It called out template input validation, missing template role/CSRF and revision coverage, the missing corrupt-after-approval export regression, legacy schema migration/backup verification, and M1/M2-specific Playwright coverage. These areas now have implementation and automated tests across the prior campaign commits and current additions; M2 is not declared complete until final CI is green.
+The newest Issue #8 review comment is [6131836536](https://github.com/badmrfrosty313/LedgerBridge/issues/8#issuecomment-6131836536), reviewing `1bf035f`. It identified an Auth schema-version downgrade, inconsistent mapped-export authorization, receipt identity gaps, backup coverage for versioned legacy databases, and a maximum-length XLSX filename confirmation failure. The `a2cb6f0` checkpoint includes code and regression coverage for all five.
 
 ## Local verification at this working checkpoint
 
-- `python -m unittest discover -s tests -q`: 75 tests passed.
+- `python -m unittest discover -s tests -q`: 79 tests passed.
 - `python -m pilot.run`: passed; 11 synthetic imports, 8 approved/exported, 3 rejected, exact total `$638.00`, backup restore.
-- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 23.474 ms; this is a local sample, not a performance or savings claim.
+- `python -m pilot.campaign_demo`: passed end-to-end; synthetic XLSX source, 10,001 cents allocated/mapped/exported/received, 0-cent difference, retry replayed. One observed run took 29.213 ms; this is a local sample, not a performance or savings claim.
 - `python scripts/release.py --check`: passed after preserving the v0.2.0 metadata heading.
 - Compileall, JavaScript syntax, `pip check`, and `git diff --check`: passed. Production Waitress startup/health passed from `/tmp/ledgerbridge-prod-deps` with a temporary synthetic database.
-- Full Playwright browser workflow passed locally on both system Chromium and Playwright-pinned Chromium 151 after the row-selection fix, with fresh temporary SQLite files and isolated ports. It covers XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent approval, invalid totals and duplicate destinations; mapping dry-run/confirmation including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. Playwright Chromium was installed to `/tmp/ledgerbridge-playwright-browsers` because the managed home cache is not writable.
+- Full Playwright browser workflow passed locally with fresh temporary SQLite files, isolated ports, and system Chromium. It covers XLSX preview/formula rejection/confirmation; allocation preview/save/refresh/independent reviewer approval, invalid totals and duplicate destinations; mapped export by an independent administrator; mapping dry-run including an explicitly enabled negative credit; round-trip cents; simulated ERP retry; immutable export lock; queue filters; keyboard, empty state, HTML safety, desktop and mobile layout. Playwright Chromium is available under `/tmp/ledgerbridge-playwright-browsers`.
 
 ## Remote CI and remaining acceptance gates
 
