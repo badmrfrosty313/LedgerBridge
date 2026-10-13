@@ -177,6 +177,11 @@ const erpOrigin=process.env.LEDGERBRIDGE_TEST_ERP_ORIGIN||'http://127.0.0.1:8766
  await page.getByText('difference $0.00',{exact:false}).waitFor();
  await page.getByText('A different administrator must confirm this mapping export.',{exact:false}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Confirm mapped export snapshot'}).count(),0);
+ await switchUser('approver', 'TestOnlyApproverPassword2026!');
+ await page.getByRole('button',{name:'Export history',exact:true}).click();
+ await page.getByRole('button',{name:'Run mapping dry-run'}).click();
+ await page.getByText('Only administrators can confirm mapped exports.',{exact:false}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Confirm mapped export snapshot'}).count(),0);
  await switchUser('admin-two', 'TestOnlySecondAdminPassword2026!');
  await page.getByRole('button',{name:'Export history',exact:true}).click();
  await page.getByRole('button',{name:'Run mapping dry-run'}).click();
