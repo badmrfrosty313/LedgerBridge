@@ -4,7 +4,7 @@ Branch: `codex/ledgerbridge-v2-campaign`
 
 ## Latest pushed checkpoint
 
-`ae8ce1f` — completes the independent Issue #8 review fixes from `a2cb6f0` and additionally hides mapped-export confirmation from non-admin UI sessions. The local full test suite, pilots, release check, and Playwright browser journey pass. GitHub Actions validation is pending for this pushed checkpoint.
+`d2b3223` — records the completed independent Issue #8 review fixes from `a2cb6f0` and `ae8ce1f`. GitHub Actions run [38440269131](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38440269131) passed the Python matrix, Playwright workflow, release checks, and production startup. The local full test suite, pilots, release check, and Playwright browser journey also pass.
 
 ## Independent review read
 
@@ -21,14 +21,14 @@ The newest Issue #8 review comment is [6131836536](https://github.com/badmrfrost
 
 ## Remote CI and remaining acceptance gates
 
-Actions runs [38297176502](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297176502), [38297301924](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297301924), [38297977618](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38297977618), [38298253269](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298253269), and [38298593182](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298593182) failed browser CI while the Python matrix passed. Run `38298593182` exposed the row-selection race. It is fixed and run [38298874976](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298874976) passed all CI jobs, including the cross-platform Python matrix, Playwright browser workflow, and production Waitress startup. A docs-only checkpoint will rerun the same gate.
+Earlier browser CI failures were traced and fixed; runs [38298874976](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38298874976), [38440024857](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38440024857), [38440095000](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38440095000), [38440226007](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38440226007), and [38440269131](https://github.com/badmrfrosty313/LedgerBridge/actions/runs/38440269131) passed the complete workflow, including cross-platform Python, Playwright browser, release, and production-startup checks.
 
 ### Milestone state
 
-- M1/M2: implementation includes session-owned one-use XLSX previews, browser confirmation tests, allocation templates, versioned migrations, independent approval, total-change review-required state, corrupted persisted allocation checks on approval/export, and concurrency tests. Legacy CSV remains intentionally one row per source document. Final CI/browser green gate remains.
+- M1/M2: implementation includes session-owned one-use XLSX previews, browser confirmation tests, allocation templates, versioned migrations, independent approval, total-change review-required state, corrupted persisted allocation checks on approval/export, and concurrency tests. Legacy CSV remains intentionally one row per source document. The Issue #8 review-fix CI gate is green; broader campaign acceptance should still be checked against the master plan before calling M2 complete.
 - M3: versioned generic account mapping, non-persistent dry-run, immutable allocation-aware mapped export, mock ERP idempotency, and reconciliation logic are implemented. No live connector.
 - M4: reviewer queue search/filter/status summaries, exception/source/history guidance, keyboard and responsive checks, and a visible source→export→simulated receipt cent reconciliation panel are implemented.
-- M5: tests now cover malformed/corrupted persisted records, XLSX path/external-link/compression limits, malformed Base64, concurrency, legacy backup/restore, and fail-closed newer DB versions. Cross-platform remote matrix and final CI remain.
+- M5: tests now cover malformed/corrupted persisted records, XLSX path/external-link/compression limits, malformed Base64, concurrency, legacy backup/restore, and fail-closed newer DB versions. These CI checks pass for this checkpoint; campaign-wide final review remains.
 - M6: a synthetic end-to-end harness, candidate guide, manual demo, architecture/sequence diagrams, benchmark caveat, screenshot plan, accessibility notes, and no-merge/release checklist are added. Final CI and final artifact review remain.
 - M7 OCR/AI is excluded.
 
