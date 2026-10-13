@@ -1,10 +1,10 @@
-# LedgerBridge
+# LedgerBridge 2.0
 
-[Download the one-page feature overview (PDF)](docs/LedgerBridge_One_Page_Overview.pdf)
+[Earlier one-page feature overview (PDF, originally v0.2.0)](docs/LedgerBridge_One_Page_Overview.pdf)
 
 LedgerBridge imports business documents, finds validation exceptions, records human review, creates durable CSV exports, and can demonstrate delivery to a separate simulated ERP. The code supports a single organization per database. Demo and pilot documents are fully invented synthetic examples.
 
-The latest published package is v0.2.0; the separate `codex/ledgerbridge-v2-campaign` branch is an unreleased development candidate. Support, response times, compatibility, and future updates are not guaranteed. The project is released under [MIT](LICENSE); see [dependency attribution](THIRD_PARTY_NOTICES.md) and [release notes](docs/RELEASE_NOTES.md).
+**Version 2.0.0:** a local-first, portfolio-oriented financial document review application with safe Excel intake, exact-cent allocations and templates, independent approval, a reviewer workspace, immutable mapped exports and simulated ERP reconciliation. It is not a live accounting integration or a security-certified system for confidential customer records. Support, response times, compatibility, and future updates are not guaranteed. Licensed under [MIT](LICENSE); see [dependency attribution](THIRD_PARTY_NOTICES.md), [release notes](docs/RELEASE_NOTES.md), and [security review](docs/SECURITY_REVIEW.md).
 
 ## Explore locally
 
@@ -56,7 +56,7 @@ Cost allocations are integrity-checked before approval and export, and changing 
 
 Negative credit totals remain rejected unless an administrator explicitly enables the backward-compatible `allow_credits` business rule. When enabled, credits still require ordinary validation, exact allocation reconciliation where configured, independent approval, immutable export, and simulated receipt; zero totals remain invalid.
 
-Data resides in `data/ledgerbridge.sqlite3` unless `--db` selects another path. It is excluded from Git. Back up using the SQLite snapshot command in the deployment guide. Changes to older unversioned databases create a snapshot before upgrading.
+Data resides in `data/ledgerbridge.sqlite3` unless `--db` selects another path. It is excluded from Git. Back up using the SQLite snapshot command in the deployment guide. Upgrading supported older document databases creates a checked pre-migration snapshot before schema changes.
 
 ## Validation
 
