@@ -1,6 +1,6 @@
 # LedgerBridge 2.0 campaign candidate
 
-This is a local-first **release candidate workstream**, not a published v2 release. The latest tagged/released package remains v0.2.0. No merge, tag, public deployment, live ERP connection, OCR/AI extraction, or customer-data pilot is part of this candidate.
+This document describes the LedgerBridge 2.0 **local-first portfolio release candidate**, including its acceptance evidence and operational limits. Releasing the code on GitHub does not constitute public deployment, permission to process real customer data, or a live accounting integration. OCR/AI extraction and M7 remain excluded.
 
 ## Quickstart
 
@@ -30,7 +30,7 @@ flowchart LR
   Mock --> Receipt[Idempotent receipt + cent reconciliation]
 ```
 
-The Python service owns parsing, validation, authorization, revision checks, transactions, and export snapshots. Vanilla JavaScript renders the review workflow; browser state is never authoritative. SQLite migrations are versioned and older unversioned databases are backed up before upgrade. The mock ERP is a separate local SQLite store. It is not a real connector.
+The Python service owns parsing, validation, authorization, revision checks, transactions, and export snapshots. Vanilla JavaScript renders the review workflow; browser state is never authoritative. SQLite migrations are versioned and supported older document databases are backed up before upgrade. The mock ERP is a separate local SQLite store. It is not a real connector.
 
 ```mermaid
 sequenceDiagram
